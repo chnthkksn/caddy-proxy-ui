@@ -1,0 +1,260 @@
+:root {
+  --bg: #f7f7f8;
+  --sidebar-bg: #1f2430;
+  --sidebar-fg: #c4c9d4;
+  --sidebar-active-bg: #2c3244;
+  --card-bg: #ffffff;
+  --border: #e2e2e6;
+  --text: #1a1a1e;
+  --text-muted: #6b6f76;
+  --accent: #4f7cff;
+  --danger: #d94f4f;
+  --success: #2fa96b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar .brand {
+  font-weight: 600;
+  color: #fff;
+  padding: 0 20px 16px;
+  font-size: 15px;
+}
+.sidebar button {
+  all: unset;
+  cursor: pointer;
+  padding: 10px 20px;
+  font-size: 14px;
+}
+.sidebar button.active {
+  background: var(--sidebar-active-bg);
+  color: #fff;
+}
+.sidebar button.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.status-dot .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-dot .dot.on {
+  background: var(--success);
+}
+.status-dot .dot.off {
+  background: var(--danger);
+}
+
+.content {
+  padding: 24px;
+  flex: 1;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  text-align: left;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+button.secondary:first-child {
+  margin-left: 0;
+}
+button.danger {
+  color: var(--danger);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.banner {
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.banner.warn {
+  background: #fff4e5;
+  color: #915a00;
+  border: 1px solid #f3d9a4;
+}
+.banner.error {
+  background: #fdeaea;
+  color: #9b2c2c;
+  border: 1px solid #f5b8b8;
+}
+.banner.success {
+  background: #e9f9f0;
+  color: #1f7a4d;
+  border: 1px solid #b8ecd0;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.modal {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 24px;
+  width: 440px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.field {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label,
+.field-label-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.field input,
+.field textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.auth-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+.auth-card {
+  width: 340px;
+  padding: 32px;
+}
+.auth-card h1 {
+  font-size: 18px;
+  margin: 0 0 20px;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.error-text {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 8px;
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}

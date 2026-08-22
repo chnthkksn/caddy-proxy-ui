@@ -1,0 +1,32 @@
+services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    expose:
+      - "2019" # admin API — deliberately NOT published to the host, see the plan
+    volumes:
+      - ./Caddyfile.bootstrap:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  caddy-ui:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    environment:
+      CADDY_ADMIN_URL: http://caddy:2019
+      DB_PATH: /data/caddy-ui.db
+      LISTEN_ADDR: :8080
+      COOKIE_SECURE: "false" # set to "true" once caddy-ui itself is served over TLS
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+
+volumes:
+  caddy_data:
+  caddy_config:
