@@ -52,3 +52,12 @@ func (s *Store) DeleteExpiredSessions() error {
 	}
 	return nil
 }
+
+// DeleteAllSessions invalidates every active session, e.g. after a password reset.
+func (s *Store) DeleteAllSessions() error {
+	_, err := s.db.Exec(`DELETE FROM sessions`)
+	if err != nil {
+		return fmt.Errorf("delete all sessions: %w", err)
+	}
+	return nil
+}
