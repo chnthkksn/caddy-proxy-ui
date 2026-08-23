@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Caddy Proxy UI — install / manage script.
 #
-# Quickstart:
-#   curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
+# Quickstart (shows an interactive menu — nothing runs until you pick an option):
+#   curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash
 #
 # Prefer to review it first? Download, read it, then run:
 #   curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh -o install.sh
 #   less install.sh
-#   sudo bash install.sh install
+#   sudo bash install.sh
+#
+# For scripting/automation, skip the menu by passing a command directly, e.g.:
+#   curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
 #
 # Commands:
-#   install            Install Caddy (if missing), caddy-ui, and the systemd service (default)
+#   install            Install Caddy (if missing), caddy-ui, and the systemd service
 #   install-caddy      Install just the Caddy dependency, idempotent
 #   run                Run caddy-ui in the foreground, no systemd service — for a quick trial
 #   update             Update caddy-ui to the latest release, if one is available
@@ -31,6 +34,13 @@ cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
 log() { echo "==> $*"; }
+
+# have_tty checks /dev/tty is actually usable, not just present as a device
+# node — the node can exist with no controlling terminal actually attached
+# (e.g. some CI/sandboxed contexts), which a plain `[ -e /dev/tty ]` misses.
+have_tty() {
+	(: </dev/tty) 2>/dev/null
+}
 
 require_root() {
 	if [ "$(id -u)" -ne 0 ]; then
@@ -255,7 +265,7 @@ cmd_reset_password() {
 	fi
 
 	local pass1 pass2
-	if [ ! -e /dev/tty ]; then
+	if ! have_tty; then
 		echo "No terminal available for a password prompt. Save this script and run" >&2
 		echo "'reset-password' from a real terminal, or pipe a password directly into" >&2
 		echo "the binary: echo 'newpassword' | DB_PATH=$DB_PATH $BIN_PATH reset-password" >&2
@@ -315,9 +325,60 @@ usage() {
 	sed -n '2,/^[^#]/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
+# MENU_CMD is set by interactive_menu rather than returned via command
+# substitution, so `exit` inside it (e.g. on "quit") actually exits the
+# script instead of just a subshell.
+MENU_CMD=""
+
+interactive_menu() {
+	if ! have_tty; then
+		echo "No terminal available to show a menu. Pass a command directly instead," >&2
+		echo "e.g.: curl ... | sudo bash -s -- install  (see 'help' for the full list)" >&2
+		exit 1
+	fi
+
+	cat >/dev/tty <<'EOF'
+
+Caddy Proxy UI
+
+  1) Install              Caddy (if missing) + caddy-ui + systemd service
+  2) Install Caddy only   just the dependency, idempotent
+  3) Run in foreground    no systemd — quick trial
+  4) Update               update caddy-ui to the latest release
+  5) Reset password       reset the dashboard admin password
+  6) Uninstall            remove caddy-ui (keeps its data)
+  7) Status               systemd status for caddy and caddy-ui
+  q) Quit, do nothing
+
+EOF
+	local choice
+	read -rp "Choice [1]: " choice </dev/tty
+
+	case "${choice:-1}" in
+	1) MENU_CMD="install" ;;
+	2) MENU_CMD="install-caddy" ;;
+	3) MENU_CMD="run" ;;
+	4) MENU_CMD="update" ;;
+	5) MENU_CMD="reset-password" ;;
+	6) MENU_CMD="uninstall" ;;
+	7) MENU_CMD="status" ;;
+	q | Q) exit 0 ;;
+	*)
+		echo "Unrecognized choice: $choice" >&2
+		exit 1
+		;;
+	esac
+}
+
 main() {
-	local cmd="${1:-install}"
-	[ $# -gt 0 ] && shift
+	local cmd
+	if [ $# -eq 0 ]; then
+		interactive_menu
+		cmd="$MENU_CMD"
+	else
+		cmd="$1"
+		shift
+	fi
 
 	case "$cmd" in
 	install) cmd_install ;;

@@ -38,15 +38,17 @@ yours): `caddy-ui` ~19 MB RAM, ~60 MB combined with Caddy, ~0% CPU.
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
+curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash
 ```
 
-Checks ports 80/443/8080 are free before touching anything, installs Caddy if it's
-missing, downloads the latest `caddy-ui` binary, sets it up as a systemd service, and
-prints the URL to open. Then create the administrator account — there's no default
-login. The same script also handles `update`, `reset-password`, `uninstall [--purge]`,
-and `status`; run `install.sh help` for the full list, or read it before running it —
-it's a plain shell script.
+Shows a menu — nothing runs until you pick an option (install, update, reset-password,
+uninstall, status, ...). Choosing install checks ports 80/443/8080 are free before
+touching anything, installs Caddy if it's missing, downloads the latest `caddy-ui`
+binary, sets it up as a systemd service, and prints the URL to open. Then create the
+administrator account — there's no default login.
+
+Scripting instead of a human at a keyboard? Skip the menu by passing a command directly,
+e.g. `... | sudo bash -s -- install`; run `install.sh help` for the full list.
 
 Prefer Docker? That's supported too:
 
