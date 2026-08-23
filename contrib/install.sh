@@ -166,10 +166,19 @@ EOF
 
 print_access_info() {
 	local ip
-	ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+	# Prefer the actual public IP — `hostname -I` lists every address the
+	# host has, and on providers with a private/internal network interface
+	# that's often not the first (or reachable) one.
+	ip="$(curl -fsSL -4 --max-time 3 https://ifconfig.me 2>/dev/null || true)"
+	if [ -z "$ip" ]; then
+		ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+	fi
 	ip="${ip:-<your-server-ip>}"
 	echo
 	log "caddy-ui is running. Open http://${ip}:8080 to create the administrator account."
+	echo "If that doesn't load: check your firewall/cloud security group allows inbound"
+	echo "TCP 8080 (and 80/443 for Caddy), and that ${ip} is this server's real reachable"
+	echo "address — some providers list a private network IP first."
 }
 
 cmd_install() {
