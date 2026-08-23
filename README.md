@@ -88,14 +88,19 @@ no Caddyfile edits needed.
 **2. Install `caddy-ui`** from the [latest release](https://github.com/chnthkksn/caddy-proxy-ui/releases):
 
 ```bash
-curl -LO https://github.com/chnthkksn/caddy-proxy-ui/releases/latest/download/caddy-ui_<version>_linux_amd64.tar.gz
-tar xzf caddy-ui_<version>_linux_amd64.tar.gz
+curl -LO https://github.com/chnthkksn/caddy-proxy-ui/releases/latest/download/caddy-ui_linux_amd64.tar.gz
+tar xzf caddy-ui_linux_amd64.tar.gz
 sudo mv caddy-ui /usr/local/bin/caddy-ui
 ```
+
+(Swap `linux_amd64` for `linux_arm64` or `linux_armv7` if that matches your server. This
+always fetches whatever's currently latest — release filenames are deliberately
+unversioned so this URL never needs updating.)
 
 Verify the download against `checksums.txt` from the same release:
 
 ```bash
+curl -LO https://github.com/chnthkksn/caddy-proxy-ui/releases/latest/download/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 ```
 

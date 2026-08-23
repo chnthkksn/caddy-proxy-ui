@@ -109,11 +109,15 @@ jobs:
 
       - name: Package
         env:
-          VERSION: ${{ needs.determine-version.outputs.tag }}
           SUFFIX: ${{ matrix.suffix }}
         run: |
           cd dist
-          name="caddy-ui_${VERSION}_${SUFFIX}"
+          # Deliberately unversioned: lets docs use the stable
+          # /releases/latest/download/<name> URL without needing to know
+          # the current version. The binary itself still reports its real
+          # version (baked in via ldflags above), and the release page
+          # this asset is attached to is tagged correctly regardless.
+          name="caddy-ui_${SUFFIX}"
           tar czf "$name.tar.gz" caddy-ui
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           rm caddy-ui
