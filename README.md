@@ -4,10 +4,10 @@
 ![Build](https://github.com/chnthkksn/caddy-proxy-ui/actions/workflows/release.yml/badge.svg)
 ![License](https://img.shields.io/github/license/chnthkksn/caddy-proxy-ui)
 
-**A point-and-click UX for [Caddy](https://caddyserver.com), at a fraction of the usual footprint.**
+**A lightweight, native web UI for managing [Caddy](https://caddyserver.com) reverse
+proxies on small servers.**
 
-A small self-hosted UI for managing reverse proxy hosts backed by Caddy. Point it at
-your Caddy container's Admin API, add a domain and an upstream, and Caddy handles the
+Point it at Caddy's Admin API, add a domain and an upstream, and Caddy handles the
 reverse proxy, automatic HTTPS, and certificate renewal — live, with no config file
 writes and no restarts.
 
@@ -21,19 +21,24 @@ Browser ──▶ Caddy Proxy UI (Go binary: REST API + SQLite + embedded Svelte
 
 ## Why this exists
 
-Reverse-proxying with TLS shouldn't require hand-editing config files, but most tools
-that solve that drag along a heavy stack (a separate backend, a database server, a
-Node runtime) to do it. Caddy already does automatic HTTPS and reverse proxying well,
-out of the box, with zero extra services — it just doesn't ship a UI.
+Reverse-proxying with TLS shouldn't require hand-editing config files. Tools that solve
+that problem well already exist, but they typically bring a whole management stack along
+for the ride — a separate backend runtime, a database server, a certificate-management
+subprocess. On a 1GB VPS that's already running something else, that stack can be the
+difference between "fits" and "doesn't."
 
-This project is **one job**: a beautiful, minimal UI for managing Caddy as a reverse
-proxy. Caddy remains completely standard — this doesn't wrap or replace it, it drives it
-over the Admin API. You can always drop out to a hand-written Caddyfile; nothing here is
-a lock-in.
+The goal here isn't a smaller Caddy — Caddy already does automatic HTTPS and reverse
+proxying well, out of the box, with zero extra services. The goal is to **not add a heavy
+management stack around it**. `caddy-ui` is one small Go binary: a REST API, SQLite, and
+an embedded Svelte frontend, all statically compiled — no Node runtime in production, no
+Redis, no Postgres/MySQL, no Python/Certbot subprocess. Caddy remains completely
+standard; this drives it over its Admin API rather than wrapping or replacing it, and you
+can always drop out to a hand-written Caddyfile — nothing here is a lock-in.
 
 It deliberately does **not** try to become a full DevOps platform: no built-in metrics
 dashboard, no RBAC, no Prometheus/Grafana. If you need that, put something else in front
-of Caddy — this just makes the common case (`domain → upstream, please`) fast.
+of Caddy — this just makes the common case (`domain → upstream, please`) fast, on
+hardware where that needs to actually matter.
 
 ## Features
 
@@ -47,14 +52,73 @@ of Caddy — this just makes the common case (`domain → upstream, please`) fas
 | ✅ | Caddyfile export — a clean, hand-editable file, not a JSON dump |
 | ✅ | Single-admin login, no default credentials |
 | ✅ | Caddy connectivity indicator — mutations still save if Caddy is briefly offline |
-| 🚧 | Certificates dashboard, access control, live log viewer — planned, not yet built |
+| ✅ | Native Linux install (systemd) — Docker is optional, not required |
+| 🚧 | Certificates dashboard, access control, live log viewer, stats — planned, not yet built |
 
 **Non-goals:** multi-user/RBAC, a metrics/observability platform, or replacing the
 Caddyfile as a format. This is a UI for the 90% case, not a Caddy config IDE.
 
-## Quick start (Docker Compose)
+### Resource footprint
 
-This is the intended way to run it: two containers, Caddy stays completely standard.
+Engineering targets, not marketing claims — the "measured" column is real, not
+aspirational:
+
+| | Target | Measured¹ |
+|---|---:|---:|
+| `caddy-ui` idle RAM | < 30 MB | **19 MB** |
+| `caddy-ui` idle CPU | ~0% | **0%** |
+| `caddy-ui` + Caddy combined | < 100 MB | **~60 MB** |
+| External database | none | none |
+| Runtime dependencies | none | none (static binary, `CGO_ENABLED=0`) |
+
+¹ Measured on a macOS/arm64 dev machine, both processes idle with no hosts configured,
+running natively (not in Docker) — not the actual 1GB Linux VPS this is meant for.
+Real-world numbers on Linux will differ somewhat; treat this as a rough sanity check on
+the target column, not a guarantee for your hardware.
+
+## Quick start: native install (recommended for small VPSs)
+
+This is the primary way to run it — two plain OS processes, no Docker required.
+
+**1. Install Caddy** via its [official instructions](https://caddyserver.com/docs/install)
+(the apt/dnf repo installs a working `caddy.service` with the right capabilities for
+ports 80/443 already set up). Caddy's admin API already defaults to `localhost:2019` —
+no Caddyfile edits needed.
+
+**2. Install `caddy-ui`** from the [latest release](https://github.com/chnthkksn/caddy-proxy-ui/releases):
+
+```bash
+curl -LO https://github.com/chnthkksn/caddy-proxy-ui/releases/latest/download/caddy-ui_<version>_linux_amd64.tar.gz
+tar xzf caddy-ui_<version>_linux_amd64.tar.gz
+sudo mv caddy-ui /usr/local/bin/caddy-ui
+```
+
+Verify the download against `checksums.txt` from the same release:
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+```
+
+**3. Install the systemd unit** and start it:
+
+```bash
+sudo cp contrib/systemd/caddy-ui.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now caddy-ui
+```
+
+Then open `http://<your-server>:8080`, create the administrator account (there's no
+default login), and add your first proxy host.
+
+`caddy-ui`'s defaults already assume this setup: `CADDY_ADMIN_URL=http://localhost:2019`
+and `CADDY_ADMIN_LISTEN=127.0.0.1:2019` — since both processes share the host instead of
+separate Docker network namespaces, the admin API never needs to bind anything but
+loopback, and it's never reachable off the box.
+
+## Quick start: Docker Compose
+
+If you already run Docker and prefer that, it's fully supported — two containers, Caddy
+stays completely standard:
 
 ```bash
 git clone https://github.com/chnthkksn/caddy-proxy-ui.git
@@ -62,48 +126,23 @@ cd caddy-proxy-ui
 docker compose up -d
 ```
 
-Then open `http://<your-server>:8080`, create the administrator account (there's no
-default login), and add your first proxy host. Caddy listens on `:80`/`:443` as usual —
-point your domains' DNS at this server and Caddy will provision certificates
-automatically the first time each domain is actually requested.
-
-The compose file already handles the one non-obvious wiring detail: Caddy's Admin API
-(port `2019`) is reachable from the `caddy-ui` container over the internal Docker
-network, but is **never** published to the host.
+Then open `http://<your-server>:8080` and set up the administrator account, same as
+above. The compose file overrides the admin API address to `0.0.0.0:2019` (needed so the
+`caddy-ui` container can reach the `caddy` container) but never publishes port `2019` to
+the host.
 
 ### Configuration
 
-Set these as environment variables on the `caddy-ui` service in `docker-compose.yml`:
+Environment variables `caddy-ui` reads (set on the systemd unit, or on the `caddy-ui`
+service in `docker-compose.yml`):
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `CADDY_ADMIN_URL` | `http://caddy:2019` | Where caddy-ui reaches Caddy's Admin API |
-| `CADDY_ADMIN_LISTEN` | `0.0.0.0:2019` | Re-asserted on every pushed config — must match what Caddy itself binds admin to |
-| `DB_PATH` | `/data/caddy-ui.db` | SQLite database path |
-| `LISTEN_ADDR` | `:8080` | Where the UI/API itself listens |
-| `COOKIE_SECURE` | `false` | Set `true` once caddy-ui is served over TLS (e.g. behind another proxy) |
-
-## Running without Docker
-
-Each [release](https://github.com/chnthkksn/caddy-proxy-ui/releases) publishes a static
-`caddy-ui` binary for `linux/amd64`, `linux/arm64`, and `linux/armv7` — no runtime
-dependencies, no CGO.
-
-```bash
-# 1. Run Caddy yourself, with its admin API reachable (see Caddyfile.bootstrap):
-caddy run --config Caddyfile.bootstrap
-
-# 2. Download and run caddy-ui:
-curl -LO https://github.com/chnthkksn/caddy-proxy-ui/releases/latest/download/caddy-ui_<version>_linux_amd64.tar.gz
-tar xzf caddy-ui_<version>_linux_amd64.tar.gz
-CADDY_ADMIN_URL=http://localhost:2019 ./caddy-ui
-```
-
-Verify a binary with `checksums.txt` from the same release:
-
-```bash
-sha256sum -c checksums.txt --ignore-missing
-```
+| Variable | Native default | Docker Compose value | Purpose |
+|---|---|---|---|
+| `CADDY_ADMIN_URL` | `http://localhost:2019` | `http://caddy:2019` | Where caddy-ui reaches Caddy's Admin API |
+| `CADDY_ADMIN_LISTEN` | `127.0.0.1:2019` | `0.0.0.0:2019` | Re-asserted on every pushed config — must match what Caddy itself binds admin to |
+| `DB_PATH` | `/var/lib/caddy-ui/caddy-ui.db` | `/data/caddy-ui.db` | SQLite database path |
+| `LISTEN_ADDR` | `:8080` | `:8080` | Where the UI/API itself listens |
+| `COOKIE_SECURE` | `false` | `false` | Set `true` once caddy-ui is served over TLS (e.g. behind another proxy) |
 
 ## How it works
 
@@ -118,6 +157,11 @@ request outright, and reconciles on the next successful health check or a manual
 SQLite ──▶ Build() minimal JSON config ──▶ POST /load ──▶ Caddy applies it, zero-downtime
 ```
 
+Caddy always runs as its own separate, completely standard process (or container) —
+`caddy-ui` only ever talks to it over the Admin API. This is a deliberate choice: Caddy
+stays independently upgradable and debuggable, and if `caddy-ui` is ever removed, Caddy
+just keeps running with whatever config was last pushed.
+
 ## Contributing
 
 Issues and PRs are welcome. A few things that'll make a PR easy to merge:
@@ -131,6 +175,8 @@ Issues and PRs are welcome. A few things that'll make a PR easy to merge:
 - **Import must never silently drop config.** If you extend the Caddyfile importer,
   anything it can't confidently translate should come back as a reported "skipped" item,
   not a best-effort guess.
+- **Caddy stays a separate process.** Don't embed Caddy as a library into `caddy-ui` —
+  it's been considered and deliberately rejected, see "How it works" above.
 
 ### Local development
 
@@ -150,15 +196,16 @@ covers the backend. Both run clean on `main`.
 ### Project layout
 
 ```
-cmd/caddy-ui/       entrypoint, wiring
-internal/api/        HTTP handlers, session middleware
-internal/service/     ProxyService + AuthService — the only DB+Caddy touchpoints
-internal/store/        SQLite access
-internal/caddyconfig/   builds the minimal Caddy JSON config we emit
-internal/caddyclient/   talks to Caddy's Admin API (/load, /adapt)
-internal/caddyfile/     Caddyfile export + conservative import parser
-internal/webui/         serves the embedded Svelte build
-web/                    Svelte + TypeScript frontend (Vite)
+cmd/caddy-ui/          entrypoint, wiring
+internal/api/            HTTP handlers, session middleware
+internal/service/         ProxyService + AuthService — the only DB+Caddy touchpoints
+internal/store/             SQLite access
+internal/caddyconfig/        builds the minimal Caddy JSON config we emit
+internal/caddyclient/         talks to Caddy's Admin API (/load, /adapt)
+internal/caddyfile/            Caddyfile export + conservative import parser
+internal/webui/                 serves the embedded Svelte build
+web/                            Svelte + TypeScript frontend (Vite)
+contrib/systemd/                  example systemd unit for native installs
 ```
 
 ## License

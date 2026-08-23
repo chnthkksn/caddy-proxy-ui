@@ -1,0 +1,17 @@
+[Unit]
+Description=Caddy Proxy UI
+After=network.target caddy.service
+Wants=caddy.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/caddy-ui
+Environment=CADDY_ADMIN_URL=http://localhost:2019
+Environment=DB_PATH=/var/lib/caddy-ui/caddy-ui.db
+DynamicUser=yes
+StateDirectory=caddy-ui
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

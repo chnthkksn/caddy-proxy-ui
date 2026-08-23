@@ -18,7 +18,12 @@ services:
     depends_on:
       - caddy
     environment:
+      # caddy-ui's own defaults assume a native/systemd deployment (loopback
+      # admin API on the same host) — Docker needs the cross-container hop,
+      # so both of these must be set explicitly here rather than relying on
+      # the binary's defaults.
       CADDY_ADMIN_URL: http://caddy:2019
+      CADDY_ADMIN_LISTEN: 0.0.0.0:2019
       DB_PATH: /data/caddy-ui.db
       LISTEN_ADDR: :8080
       COOKIE_SECURE: "false" # set to "true" once caddy-ui itself is served over TLS

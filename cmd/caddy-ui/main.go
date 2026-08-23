@@ -22,11 +22,15 @@ var version = "dev"
 
 func main() {
 	dbPath := envOr("DB_PATH", "./data/caddy-ui.db")
-	caddyAdminURL := envOr("CADDY_ADMIN_URL", "http://caddy:2019")
-	// Must match what Caddy's own bootstrap config binds admin to (see
-	// Caddyfile.bootstrap) and gets re-asserted on every pushed config —
-	// see the comment on caddyconfig.Admin for why.
-	caddyAdminListen := envOr("CADDY_ADMIN_LISTEN", "0.0.0.0:2019")
+	// Defaults assume the primary deployment: caddy-ui and Caddy as two plain
+	// processes on the same host (see contrib/systemd/caddy-ui.service), so
+	// the admin API only ever needs loopback — never 0.0.0.0. Docker Compose
+	// overrides both of these explicitly since it needs the cross-container
+	// hop instead.
+	caddyAdminURL := envOr("CADDY_ADMIN_URL", "http://localhost:2019")
+	// Re-asserted on every pushed config — see the comment on
+	// caddyconfig.Admin for why that's necessary regardless of deployment.
+	caddyAdminListen := envOr("CADDY_ADMIN_LISTEN", "127.0.0.1:2019")
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	cookieSecure := envOr("COOKIE_SECURE", "false") == "true"
 
