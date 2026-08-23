@@ -1,16 +1,53 @@
 name: Release
 
+# Releases are cut automatically on every merge to main: the first job bumps
+# the patch version (vX.Y.Z -> vX.Y.Z+1) and pushes that tag, then the rest
+# of the pipeline builds and publishes against it. A manual tag push (for a
+# deliberate minor/major bump) or workflow_dispatch also runs the full
+# pipeline, using that tag as-is instead of computing a new one.
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: ["main"]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute release tag
+        id: compute
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+            if [ -z "$latest" ]; then
+              tag="v0.1.0"
+            else
+              version="${latest#v}"
+              major="${version%%.*}"
+              rest="${version#*.}"
+              minor="${rest%%.*}"
+              patch="${rest#*.}"
+              tag="v${major}.${minor}.$((patch + 1))"
+            fi
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   build-frontend:
+    needs: determine-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +70,7 @@ jobs:
           path: web/dist
 
   build:
-    needs: build-frontend
+    needs: [determine-version, build-frontend]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -64,7 +101,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: 0
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ needs.determine-version.outputs.tag }}
         run: |
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
@@ -72,7 +109,7 @@ jobs:
 
       - name: Package
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ needs.determine-version.outputs.tag }}
           SUFFIX: ${{ matrix.suffix }}
         run: |
           cd dist
@@ -87,8 +124,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [determine-version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -103,6 +139,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.determine-version.outputs.tag }}
           generate_release_notes: true
           files: |
             dist/*.tar.gz
