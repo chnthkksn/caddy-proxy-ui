@@ -103,43 +103,44 @@ check_ports() {
 install_caddy() {
 	if command -v caddy >/dev/null 2>&1; then
 		log "Caddy is already installed ($(caddy version))."
-		return
-	fi
-
-	log "Installing Caddy..."
-	if command -v apt-get >/dev/null 2>&1; then
-		apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
-		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' |
-			gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' |
-			tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-		chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-		chmod o+r /etc/apt/sources.list.d/caddy-stable.list
-		apt-get update
-		apt-get install -y caddy
-	elif command -v dnf >/dev/null 2>&1; then
-		dnf install -y dnf5-plugins 2>/dev/null || dnf install -y dnf-plugins-core
-		dnf copr enable -y @caddy/caddy
-		dnf install -y caddy
 	else
-		echo "Couldn't detect apt or dnf. Install Caddy manually: https://caddyserver.com/docs/install" >&2
-		exit 1
+		log "Installing Caddy..."
+		if command -v apt-get >/dev/null 2>&1; then
+			apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+			curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' |
+				gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+			curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' |
+				tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+			chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+			chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+			apt-get update
+			apt-get install -y caddy
+		elif command -v dnf >/dev/null 2>&1; then
+			dnf install -y dnf5-plugins 2>/dev/null || dnf install -y dnf-plugins-core
+			dnf copr enable -y @caddy/caddy
+			dnf install -y caddy
+		else
+			echo "Couldn't detect apt or dnf. Install Caddy manually: https://caddyserver.com/docs/install" >&2
+			exit 1
+		fi
+		log "Caddy installed."
 	fi
 
-	systemctl enable --now caddy
-	log "Caddy installed and started."
-}
-
-install_binary() {
-	local suffix url
-	suffix="$(detect_suffix)"
-	url="https://github.com/${REPO}/releases/latest/download/caddy-ui_${suffix}.tar.gz"
-
-	log "Downloading caddy-ui ($suffix)..."
-	curl -fsSL "$url" -o "$TMP_DIR/caddy-ui.tar.gz"
-	tar xzf "$TMP_DIR/caddy-ui.tar.gz" -C "$TMP_DIR"
-	install -m 0755 "$TMP_DIR/caddy-ui" "$BIN_PATH"
-	log "Installed $("$BIN_PATH" version) to $BIN_PATH"
+	# "Installed" doesn't mean "running" — a previously-installed Caddy
+	# could be stopped, or have no systemd unit at all (e.g. a manual
+	# binary-only setup), and caddy-ui needs its Admin API actually up.
+	if systemctl list-unit-files caddy.service >/dev/null 2>&1; then
+		if systemctl is-active --quiet caddy; then
+			log "Caddy's service is already running."
+		else
+			log "Caddy's service isn't running — starting it."
+			systemctl enable --now caddy
+		fi
+	else
+		echo "Warning: no 'caddy' systemd service found to manage. If Caddy was set" >&2
+		echo "up manually, make sure its Admin API is reachable at http://localhost:2019" >&2
+		echo "(Caddy's own default) or caddy-ui won't be able to push config to it." >&2
+	fi
 }
 
 # latest_version resolves GitHub's /releases/latest redirect to read off the
@@ -147,6 +148,35 @@ install_binary() {
 latest_version() {
 	curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" |
 		sed 's#.*/tag/##'
+}
+
+# install_binary downloads and installs caddy-ui, but does nothing if
+# what's already installed already matches the latest release — makes
+# `install` cheap and quiet to re-run instead of re-downloading every time,
+# and is reused by `update`. Returns 2 (not an error, but "nothing to do")
+# when it skipped, so callers can tell whether anything actually changed.
+install_binary() {
+	local suffix latest current
+	suffix="$(detect_suffix)"
+	latest="$(latest_version)"
+
+	if [ -x "$BIN_PATH" ] && [ -n "$latest" ]; then
+		current="$("$BIN_PATH" version 2>/dev/null || echo "")"
+		if [ "$current" = "$latest" ]; then
+			log "caddy-ui is already up to date ($current)."
+			return 2
+		fi
+	fi
+
+	log "Downloading caddy-ui ${latest:-latest} ($suffix)..."
+	curl -fsSL "https://github.com/${REPO}/releases/latest/download/caddy-ui_${suffix}.tar.gz" \
+		-o "$TMP_DIR/caddy-ui.tar.gz"
+	tar xzf "$TMP_DIR/caddy-ui.tar.gz" -C "$TMP_DIR"
+	# `install` replaces the destination file rather than editing it in
+	# place, so this is safe to run even while the old binary is still
+	# running as a service — it just won't take effect until restarted.
+	install -m 0755 "$TMP_DIR/caddy-ui" "$BIN_PATH"
+	log "Installed $("$BIN_PATH" version) to $BIN_PATH"
 }
 
 install_service() {
@@ -195,7 +225,7 @@ cmd_install() {
 	require_root
 	check_ports
 	install_caddy
-	install_binary
+	install_binary || true # 2 just means "already current" — not an error
 	install_service
 	print_access_info
 }
@@ -207,34 +237,13 @@ cmd_update() {
 		exit 1
 	fi
 
-	local current latest
-	current="$("$BIN_PATH" version)"
-	latest="$(latest_version)"
-	if [ -z "$latest" ]; then
-		echo "Couldn't determine the latest version — check your network connection." >&2
-		exit 1
+	# Replacing the binary is safe even while the old version is still
+	# running as a service (see install_binary) — only restarting it
+	# requires anything to stop, so skip that entirely if nothing changed.
+	if install_binary && systemctl is-active --quiet caddy-ui 2>/dev/null; then
+		log "Restarting caddy-ui..."
+		systemctl restart caddy-ui
 	fi
-
-	if [ "$current" = "$latest" ]; then
-		log "Already up to date ($current)."
-		return
-	fi
-
-	log "Updating caddy-ui: $current -> $latest"
-
-	local was_running=0
-	if systemctl is-active --quiet caddy-ui 2>/dev/null; then
-		was_running=1
-		systemctl stop caddy-ui
-	fi
-
-	install_binary
-
-	if [ "$was_running" -eq 1 ]; then
-		systemctl start caddy-ui
-	fi
-
-	log "Updated to $("$BIN_PATH" version)."
 }
 
 cmd_run() {
@@ -244,7 +253,7 @@ cmd_run() {
 		echo "or set LISTEN_ADDR to run caddy-ui on a different port." >&2
 		exit 1
 	fi
-	install_binary
+	install_binary || true
 	mkdir -p "$DATA_DIR"
 	log "Running caddy-ui in the foreground (Ctrl+C to stop)..."
 	DB_PATH="$DB_PATH" "$BIN_PATH" serve
