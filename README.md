@@ -80,6 +80,55 @@ the target column, not a guarantee for your hardware.
 
 This is the primary way to run it — two plain OS processes, no Docker required.
 
+### One-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
+```
+
+This installs Caddy (if it isn't already present, via its official apt/dnf repo),
+downloads the latest `caddy-ui` binary for your architecture, installs it as a systemd
+service, and prints the URL to open. Prefer to read a script before piping it into
+`sudo`? Fair — download it first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh -o install.sh
+less install.sh
+sudo bash install.sh install
+```
+
+Then open `http://<your-server>:8080` and create the administrator account — there's no
+default login.
+
+### Managing the install
+
+The same script handles day-to-day management (run `sudo bash install.sh <command>`, or
+pipe with `-s -- <command>` as above):
+
+| Command | Does |
+|---|---|
+| `install` | Install Caddy + `caddy-ui` + systemd service (default, safe to re-run) |
+| `install-caddy` | Just the Caddy dependency step, idempotent |
+| `run` | Run `caddy-ui` in the foreground, no systemd — for a quick trial |
+| `update` | Update `caddy-ui` to the latest release, if one is available |
+| `reset-password` | Reset the dashboard admin password if you're locked out |
+| `uninstall [--purge]` | Remove `caddy-ui`; `--purge` also deletes its SQLite data |
+| `status` | `systemctl status` for both `caddy` and `caddy-ui` |
+
+`reset-password` stops `caddy-ui` while it edits the database directly (so there's no
+write conflict with the running process), prompts for a new password, invalidates any
+existing dashboard sessions, and restarts it.
+
+`update` compares your installed version against the latest release, does nothing if
+you're already current, and otherwise stops the service (if running), swaps in the new
+binary, and restarts it — same start/stop dance as `reset-password`, minus the prompts.
+It's on-demand only; nothing here updates itself automatically in the background.
+
+### Doing it by hand
+
+If you'd rather not run a script at all, here's exactly what it does, so you can do each
+step yourself:
+
 **1. Install Caddy** via its [official instructions](https://caddyserver.com/docs/install)
 (the apt/dnf repo installs a working `caddy.service` with the right capabilities for
 ports 80/443 already set up). Caddy's admin API already defaults to `localhost:2019` —
@@ -111,9 +160,6 @@ sudo cp contrib/systemd/caddy-ui.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now caddy-ui
 ```
-
-Then open `http://<your-server>:8080`, create the administrator account (there's no
-default login), and add your first proxy host.
 
 `caddy-ui`'s defaults already assume this setup: `CADDY_ADMIN_URL=http://localhost:2019`
 and `CADDY_ADMIN_LISTEN=127.0.0.1:2019` — since both processes share the host instead of

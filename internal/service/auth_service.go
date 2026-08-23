@@ -16,6 +16,7 @@ import (
 
 var ErrSetupAlreadyDone = errors.New("admin account already exists")
 var ErrInvalidCredentials = errors.New("invalid username or password")
+var ErrNoAdminAccount = errors.New("no administrator account exists yet — complete first-run setup via the web UI first")
 
 const sessionTTL = 30 * 24 * time.Hour
 
@@ -88,6 +89,28 @@ func (a *AuthService) Login(username, password string) (token string, err error)
 		return "", err
 	}
 	return token, nil
+}
+
+// ResetPassword sets a new password for the existing admin account and
+// invalidates every active session — used by the `caddy-ui reset-password`
+// CLI command, for when someone's locked out of the dashboard.
+func (a *AuthService) ResetPassword(password string) error {
+	_, exists, err := a.store.GetSetting("admin_username")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrNoAdminAccount
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if err := a.store.SetSetting("admin_password_hash", string(hash)); err != nil {
+		return err
+	}
+	return a.store.DeleteAllSessions()
 }
 
 func (a *AuthService) Logout(token string) error {

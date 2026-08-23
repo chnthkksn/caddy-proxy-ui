@@ -5,7 +5,7 @@ Wants=caddy.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/caddy-ui
+ExecStart=/usr/local/bin/caddy-ui serve
 Environment=CADDY_ADMIN_URL=http://localhost:2019
 Environment=DB_PATH=/var/lib/caddy-ui/caddy-ui.db
 DynamicUser=yes
