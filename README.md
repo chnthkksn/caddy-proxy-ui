@@ -41,11 +41,12 @@ yours): `caddy-ui` ~19 MB RAM, ~60 MB combined with Caddy, ~0% CPU.
 curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
 ```
 
-Installs Caddy if it's missing, downloads the latest `caddy-ui` binary, sets it up as a
-systemd service, and prints the URL to open. Then create the administrator account —
-there's no default login. The same script also handles `update`, `reset-password`,
-`uninstall [--purge]`, and `status`; run `install.sh help` for the full list, or read it
-before running it — it's a plain shell script.
+Checks ports 80/443/8080 are free before touching anything, installs Caddy if it's
+missing, downloads the latest `caddy-ui` binary, sets it up as a systemd service, and
+prints the URL to open. Then create the administrator account — there's no default
+login. The same script also handles `update`, `reset-password`, `uninstall [--purge]`,
+and `status`; run `install.sh help` for the full list, or read it before running it —
+it's a plain shell script.
 
 Prefer Docker? That's supported too:
 

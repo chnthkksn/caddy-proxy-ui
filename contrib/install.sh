@@ -51,6 +51,45 @@ detect_suffix() {
 	esac
 }
 
+port_in_use() {
+	local port="$1"
+	if command -v ss >/dev/null 2>&1; then
+		# Plain grep over the full listing rather than ss's own filter DSL —
+		# fewer ways to get the syntax subtly wrong.
+		ss -ltn 2>/dev/null | grep -q ":${port} "
+	elif command -v netstat >/dev/null 2>&1; then
+		netstat -ltn 2>/dev/null | grep -q ":${port} "
+	else
+		(exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null
+	fi
+}
+
+# check_ports fails fast, before touching anything, if a port we need is
+# already bound by something else — rather than letting the user discover
+# it later as a crash-looping systemd service. Skips ports already owned by
+# our own (already-running) services, so re-running `install` stays fine.
+check_ports() {
+	local conflicts=()
+
+	if ! systemctl is-active --quiet caddy 2>/dev/null; then
+		for port in 80 443; do
+			port_in_use "$port" && conflicts+=("$port (needed by Caddy)")
+		done
+	fi
+
+	if ! systemctl is-active --quiet caddy-ui 2>/dev/null; then
+		port_in_use 8080 && conflicts+=("8080 (needed by caddy-ui)")
+	fi
+
+	if [ "${#conflicts[@]}" -gt 0 ]; then
+		echo "These ports are already in use by something else:" >&2
+		printf '  - %s\n' "${conflicts[@]}" >&2
+		echo "Free them first, or edit /etc/systemd/system/caddy-ui.service and your" >&2
+		echo "Caddy config to use different ports." >&2
+		exit 1
+	fi
+}
+
 install_caddy() {
 	if command -v caddy >/dev/null 2>&1; then
 		log "Caddy is already installed ($(caddy version))."
@@ -135,6 +174,7 @@ print_access_info() {
 
 cmd_install() {
 	require_root
+	check_ports
 	install_caddy
 	install_binary
 	install_service
@@ -180,6 +220,11 @@ cmd_update() {
 
 cmd_run() {
 	require_root
+	if ! systemctl is-active --quiet caddy-ui 2>/dev/null && port_in_use 8080; then
+		echo "Port 8080 is already in use by something else — stop it first," >&2
+		echo "or set LISTEN_ADDR to run caddy-ui on a different port." >&2
+		exit 1
+	fi
 	install_binary
 	mkdir -p "$DATA_DIR"
 	log "Running caddy-ui in the foreground (Ctrl+C to stop)..."
