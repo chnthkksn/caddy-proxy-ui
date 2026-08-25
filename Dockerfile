@@ -1,10 +1,11 @@
 # --- build the Svelte SPA ---
 FROM node:22-alpine AS web-build
 WORKDIR /web
-COPY web/package.json web/package-lock.json* ./
-RUN npm install
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 # --- build the Go binary (embeds web/dist from the stage above) ---
 FROM golang:1.25-alpine AS go-build
