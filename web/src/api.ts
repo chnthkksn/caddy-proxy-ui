@@ -1,11 +1,17 @@
 import type {
+  AccessRule,
+  AccessRuleMutationResult,
+  CertificatesResponse,
   DeleteResult,
   Host,
   HostInput,
   HostMutationResult,
   ImportResult,
+  InstanceSettings,
+  Overview,
   StatusResponse,
   SyncStatus,
+  TrafficSnapshot,
 } from "./types";
 
 const BASE = "/api";
@@ -41,6 +47,12 @@ export const api = {
   login: (username: string, password: string) =>
     request<{ ok: boolean }>("POST", "/login", { username, password }),
   logout: () => request<{ ok: boolean }>("POST", "/logout"),
+  changePassword: (currentPassword: string, newPassword: string, confirmPassword: string) =>
+    request<{ ok: boolean }>("POST", "/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
 
   listHosts: () => request<Host[]>("GET", "/hosts"),
   createHost: (host: HostInput) => request<HostMutationResult>("POST", "/hosts", host),
@@ -52,4 +64,25 @@ export const api = {
   sync: () => request<SyncStatus>("POST", "/sync"),
   importCaddyfile: (caddyfile: string) =>
     request<ImportResult>("POST", "/import", { caddyfile }),
+  exportCaddyfile: () => request<string>("GET", "/export"),
+
+  listAccessRules: (hostId: number) =>
+    request<AccessRule[]>("GET", `/hosts/${hostId}/access-rules`),
+  addBasicAuthRule: (hostId: number, username: string, password: string) =>
+    request<AccessRuleMutationResult>("POST", `/hosts/${hostId}/access-rules`, {
+      kind: "basic_auth",
+      username,
+      password,
+    }),
+  addIPRule: (hostId: number, kind: "ip_allow" | "ip_deny", value: string) =>
+    request<AccessRuleMutationResult>("POST", `/hosts/${hostId}/access-rules`, {
+      kind,
+      value,
+    }),
+  deleteAccessRule: (id: number) => request<DeleteResult>("DELETE", `/access-rules/${id}`),
+
+  traffic: () => request<TrafficSnapshot>("GET", "/traffic"),
+  certificates: () => request<CertificatesResponse>("GET", "/certificates"),
+  overview: () => request<Overview>("GET", "/overview"),
+  settings: () => request<InstanceSettings>("GET", "/settings"),
 };
