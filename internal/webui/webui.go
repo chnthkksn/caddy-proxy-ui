@@ -23,8 +23,21 @@ func Handler() (http.Handler, error) {
 		if cleanPath != "" && cleanPath != "." {
 			if _, err := fs.Stat(dist, cleanPath); err != nil {
 				r = cloneWithPath(r, "/")
+				cleanPath = ""
 			}
 		}
+
+		// Vite's asset filenames are content-hashed (assets/foo-<hash>.js) —
+		// safe to cache forever, since a content change means a new
+		// filename. Everything else (index.html, the SPA fallback) must
+		// always be revalidated, or a browser could keep serving a stale
+		// index.html pointing at asset hashes from a previous build.
+		if strings.HasPrefix(cleanPath, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+
 		fileServer.ServeHTTP(w, r)
 	}), nil
 }

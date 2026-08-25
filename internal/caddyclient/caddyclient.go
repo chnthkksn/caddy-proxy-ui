@@ -22,6 +22,10 @@ func New(baseURL string) *Client {
 	}
 }
 
+// BaseURL is the admin API this client talks to — surfaced in the UI's
+// Settings page so a misconfigured address is visible rather than guessed at.
+func (c *Client) BaseURL() string { return c.baseURL }
+
 // Load replaces Caddy's entire running config. Zero-downtime, with automatic
 // rollback on the Caddy side if the new config fails to apply.
 func (c *Client) Load(ctx context.Context, config any) error {
@@ -75,9 +79,18 @@ func (c *Client) Adapt(ctx context.Context, caddyfile string) (json.RawMessage, 
 	return out.Result, nil
 }
 
+// pingTimeout is deliberately much shorter than the client's 5s write
+// timeout. Ping backs the connectivity dot on every page load, so a hung
+// admin API must fail fast — the moment Caddy is unwell is exactly when
+// someone opens this UI, and it shouldn't stall behind the health check.
+const pingTimeout = 1500 * time.Millisecond
+
 // Ping reports whether Caddy's admin API is reachable, for the connectivity
 // indicator. It does not validate the config content, only reachability.
 func (c *Client) Ping(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/config/", nil)
 	if err != nil {
 		return false

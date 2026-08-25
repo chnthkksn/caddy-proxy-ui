@@ -29,6 +29,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.Handle("POST /api/change-password", s.requireAuth(http.HandlerFunc(s.handleChangePassword)))
 
 	mux.Handle("GET /api/hosts", s.requireAuth(http.HandlerFunc(s.handleListHosts)))
 	mux.Handle("POST /api/hosts", s.requireAuth(http.HandlerFunc(s.handleCreateHost)))
@@ -36,6 +37,15 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.Handle("PUT /api/hosts/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateHost)))
 	mux.Handle("DELETE /api/hosts/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteHost)))
 	mux.Handle("POST /api/hosts/{id}/toggle", s.requireAuth(http.HandlerFunc(s.handleToggleHost)))
+
+	mux.Handle("GET /api/hosts/{id}/access-rules", s.requireAuth(http.HandlerFunc(s.handleListAccessRules)))
+	mux.Handle("POST /api/hosts/{id}/access-rules", s.requireAuth(http.HandlerFunc(s.handleCreateAccessRule)))
+	mux.Handle("DELETE /api/access-rules/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteAccessRule)))
+
+	mux.Handle("GET /api/traffic", s.requireAuth(http.HandlerFunc(s.handleTraffic)))
+	mux.Handle("GET /api/certificates", s.requireAuth(http.HandlerFunc(s.handleCertificates)))
+	mux.Handle("GET /api/overview", s.requireAuth(http.HandlerFunc(s.handleOverview)))
+	mux.Handle("GET /api/settings", s.requireAuth(http.HandlerFunc(s.handleSettings)))
 
 	mux.Handle("POST /api/sync", s.requireAuth(http.HandlerFunc(s.handleSync)))
 	mux.Handle("POST /api/import", s.requireAuth(http.HandlerFunc(s.handleImport)))

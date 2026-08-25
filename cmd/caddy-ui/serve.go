@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -29,6 +30,11 @@ func runServe() {
 	caddyAdminListen := envOr("CADDY_ADMIN_LISTEN", "127.0.0.1:2019")
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	cookieSecure := envOr("COOKIE_SECURE", "false") == "true"
+	accessLogPath := envOr("ACCESS_LOG_PATH", "./data/access.log")
+	// Native/systemd default (apt/dnf's Caddy package sets no XDG_DATA_HOME,
+	// so certmagic falls back to this path); Docker Compose overrides it to
+	// the read-only-mounted caddy_data volume's path instead.
+	certStoragePath := envOr("CADDY_STORAGE_PATH", "/var/lib/caddy/.local/share/caddy")
 
 	st, err := store.Open(dbPath)
 	if err != nil {
@@ -36,8 +42,14 @@ func runServe() {
 	}
 	defer st.Close()
 
+	if accessLogPath != "" {
+		if err := os.MkdirAll(filepath.Dir(accessLogPath), 0o755); err != nil {
+			log.Fatalf("create access log dir: %v", err)
+		}
+	}
+
 	caddy := caddyclient.New(caddyAdminURL)
-	proxy := service.New(st, caddy, caddyAdminListen)
+	proxy := service.New(st, caddy, caddyAdminListen, accessLogPath, certStoragePath)
 	auth := service.NewAuthService(st)
 
 	// Best-effort initial push so a caddy-ui restart re-applies existing
