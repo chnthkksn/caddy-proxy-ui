@@ -179,6 +179,19 @@ setup_access_log_sharing() {
 	chgrp "$LOG_GROUP" "$LOG_DIR"
 	chmod 2775 "$LOG_DIR"
 
+	# setgid above puts Caddy's log files in the shared group, but that alone
+	# does not make them readable: Caddy creates them 0600, so group members
+	# get nothing. A default ACL is what actually grants the read, and unlike
+	# a chmod it also covers the new file Caddy opens after each rotation.
+	ensure_acl_tools
+	if command -v setfacl >/dev/null 2>&1; then
+		setfacl -R -m "g:$LOG_GROUP:rX" "$LOG_DIR"
+		setfacl -R -d -m "g:$LOG_GROUP:rX" "$LOG_DIR"
+	else
+		echo "Warning: couldn't install 'acl', so caddy-ui cannot read Caddy's" >&2
+		echo "access log and the Logs & traffic page will report it as unavailable." >&2
+	fi
+
 	if ! id -u caddy >/dev/null 2>&1; then
 		log "No 'caddy' system user found — skipping access log sharing setup."
 		return
@@ -326,12 +339,25 @@ cmd_update() {
 	fi
 
 	# Replacing the binary is safe even while the old version is still
-	# running as a service (see install_binary) — only restarting it
-	# requires anything to stop, so skip that entirely if nothing changed.
-	if install_binary && systemctl is-active --quiet caddy-ui 2>/dev/null; then
-		log "Restarting caddy-ui..."
-		systemctl restart caddy-ui
-	fi
+	# running as a service — see install_binary.
+	install_binary || true # 2 just means "already current", not an error
+
+	# Re-apply the service configuration on every update, not only on a fresh
+	# install. A release can introduce new environment variables or new
+	# directories — the access log and certificate sharing below both did —
+	# and an update that swapped the binary alone would leave it running
+	# under a unit written before any of that existed. That is not a
+	# hypothetical: it is how a working install broke on upgrade, with the
+	# new binary falling back to a relative access-log path that DynamicUser
+	# cannot create.
+	setup_access_log_sharing
+	setup_cert_storage_sharing
+	install_service
+
+	# install_service only enables the unit; an already-running service keeps
+	# the old environment until it is actually restarted.
+	systemctl restart caddy-ui
+	log "caddy-ui is up to date and running the current service configuration."
 }
 
 cmd_run() {
