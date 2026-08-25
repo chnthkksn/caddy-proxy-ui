@@ -238,6 +238,21 @@ setup_cert_storage_sharing() {
 	# automatically, with no re-run of this script required.
 	setfacl -R -m "g:$CERT_GROUP:rX" "$CADDY_STORAGE_PATH"
 	setfacl -R -d -m "g:$CERT_GROUP:rX" "$CADDY_STORAGE_PATH"
+
+	# Reading the storage root is not enough on its own — the process still
+	# has to walk into it, and Caddy's home and the XDG directories above it
+	# are 0700. Without traverse on each of those, caddy-ui gets EACCES
+	# before the ACLs above are ever consulted. Execute-only: enough to pass
+	# through a directory, not enough to list what else is in it.
+	local dir="$CADDY_STORAGE_PATH"
+	while :; do
+		dir="$(dirname "$dir")"
+		case "$dir" in
+		/ | /var | /var/lib | /home | /usr | /opt | /srv | .) break ;;
+		esac
+		setfacl -m "g:$CERT_GROUP:--x" "$dir" || break
+	done
+
 	log "Granted the '$CERT_GROUP' group read-only access to $CADDY_STORAGE_PATH."
 }
 
