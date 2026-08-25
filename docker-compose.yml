@@ -11,6 +11,7 @@ services:
       - ./Caddyfile.bootstrap:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy-ui
 
   caddy-ui:
     build: .
@@ -27,11 +28,23 @@ services:
       DB_PATH: /data/caddy-ui.db
       LISTEN_ADDR: :8080
       COOKIE_SECURE: "false" # set to "true" once caddy-ui itself is served over TLS
+      # A dedicated volume (not ./data) — Caddy is the one writing here, so
+      # it gets its own small, purpose-specific mount rather than sharing
+      # caddy-ui's own data directory.
+      ACCESS_LOG_PATH: /var/log/caddy-ui/access.log
+      # The official caddy image sets XDG_DATA_HOME=/data, so certmagic
+      # stores certificates under /data/caddy inside the caddy container —
+      # this is that same caddy_data volume, mounted read-only, at the
+      # equivalent path.
+      CADDY_STORAGE_PATH: /caddy-data/caddy
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
+      - caddy_logs:/var/log/caddy-ui
+      - caddy_data:/caddy-data:ro
 
 volumes:
   caddy_data:
   caddy_config:
+  caddy_logs:

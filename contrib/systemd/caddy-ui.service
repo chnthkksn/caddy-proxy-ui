@@ -8,7 +8,15 @@ Type=simple
 ExecStart=/usr/local/bin/caddy-ui serve
 Environment=CADDY_ADMIN_URL=http://localhost:2019
 Environment=DB_PATH=/var/lib/caddy-ui/caddy-ui.db
+Environment=ACCESS_LOG_PATH=/var/log/caddy-ui/access.log
+Environment=CADDY_STORAGE_PATH=/var/lib/caddy/.local/share/caddy
 DynamicUser=yes
+# caddy-ui-logs lets this service read /var/log/caddy-ui/access.log, which
+# Caddy's own service writes. caddy-ui-certs lets it read (never write)
+# Caddy's certificate storage for the Certificates page. See
+# contrib/install.sh's setup_access_log_sharing and
+# setup_cert_storage_sharing for how both are provisioned.
+SupplementaryGroups=caddy-ui-logs caddy-ui-certs
 StateDirectory=caddy-ui
 Restart=on-failure
 RestartSec=5
