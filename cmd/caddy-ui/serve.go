@@ -42,9 +42,16 @@ func runServe() {
 	}
 	defer st.Close()
 
+	// Access logging is optional, so a directory we can't create must not be
+	// fatal: carry on with traffic features switched off. Taking the whole
+	// proxy manager down over an optional page is the wrong trade — and it
+	// is exactly what happened to upgrades whose unit file predated
+	// ACCESS_LOG_PATH, where this fell back to a relative path that
+	// DynamicUser cannot write.
 	if accessLogPath != "" {
 		if err := os.MkdirAll(filepath.Dir(accessLogPath), 0o755); err != nil {
-			log.Fatalf("create access log dir: %v", err)
+			log.Printf("access logging disabled (%s is not writable: %v)", filepath.Dir(accessLogPath), err)
+			accessLogPath = ""
 		}
 	}
 
