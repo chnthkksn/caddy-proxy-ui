@@ -17,6 +17,7 @@ import (
 var ErrSetupAlreadyDone = errors.New("admin account already exists")
 var ErrInvalidCredentials = errors.New("invalid username or password")
 var ErrNoAdminAccount = errors.New("no administrator account exists yet — complete first-run setup via the web UI first")
+var ErrCurrentPasswordIncorrect = errors.New("current password is incorrect")
 
 const sessionTTL = 30 * 24 * time.Hour
 
@@ -111,6 +112,29 @@ func (a *AuthService) ResetPassword(password string) error {
 		return err
 	}
 	return a.store.DeleteAllSessions()
+}
+
+// ChangePassword lets a logged-in admin set a new password themselves,
+// given their current one — unlike ResetPassword (the CLI recovery path),
+// it does not invalidate other sessions, since this is a routine change,
+// not a "something's wrong, kill everything" recovery.
+func (a *AuthService) ChangePassword(currentPassword, newPassword string) error {
+	hash, exists, err := a.store.GetSetting("admin_password_hash")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrNoAdminAccount
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(currentPassword)); err != nil {
+		return ErrCurrentPasswordIncorrect
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	return a.store.SetSetting("admin_password_hash", string(newHash))
 }
 
 func (a *AuthService) Logout(token string) error {

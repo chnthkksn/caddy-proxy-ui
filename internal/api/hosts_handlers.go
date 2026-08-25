@@ -15,6 +15,7 @@ type hostRequest struct {
 	Domain         string            `json:"domain"`
 	Upstream       string            `json:"upstream"`
 	RequestHeaders map[string]string `json:"request_headers"`
+	GroupLabel     string            `json:"group_label"`
 	Enabled        *bool             `json:"enabled"`
 }
 
@@ -23,6 +24,7 @@ type hostResponse struct {
 	Domain         string            `json:"domain"`
 	Upstream       string            `json:"upstream"`
 	RequestHeaders map[string]string `json:"request_headers"`
+	GroupLabel     string            `json:"group_label"`
 	Enabled        bool              `json:"enabled"`
 	CreatedAt      string            `json:"created_at"`
 	UpdatedAt      string            `json:"updated_at"`
@@ -43,6 +45,7 @@ func toHostResponse(h store.Host) hostResponse {
 		Domain:         h.Domain,
 		Upstream:       h.Upstream,
 		RequestHeaders: headers,
+		GroupLabel:     h.GroupLabel,
 		Enabled:        h.Enabled,
 		CreatedAt:      h.CreatedAt,
 		UpdatedAt:      h.UpdatedAt,
@@ -121,7 +124,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		enabled = *req.Enabled
 	}
 
-	h, sync, err := s.proxy.CreateHost(r.Context(), domain, upstream, string(headersJSON), enabled)
+	h, sync, err := s.proxy.CreateHost(r.Context(), domain, upstream, string(headersJSON), strings.TrimSpace(req.GroupLabel), enabled)
 	if err != nil {
 		writeHostError(w, err)
 		return
@@ -158,7 +161,7 @@ func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
 		enabled = *req.Enabled
 	}
 
-	h, sync, err := s.proxy.UpdateHost(r.Context(), id, domain, upstream, string(headersJSON), enabled)
+	h, sync, err := s.proxy.UpdateHost(r.Context(), id, domain, upstream, string(headersJSON), strings.TrimSpace(req.GroupLabel), enabled)
 	if err != nil {
 		writeHostError(w, err)
 		return

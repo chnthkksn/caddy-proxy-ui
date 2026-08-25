@@ -15,13 +15,14 @@ type Host struct {
 	Domain         string
 	Upstream       string
 	RequestHeaders string // raw JSON object, e.g. {"X-Foo":"bar"}
+	GroupLabel     string // free-text label shown above the domain, e.g. "Northwind"
 	Enabled        bool
 	CreatedAt      string
 	UpdatedAt      string
 }
 
 func (s *Store) ListHosts() ([]Host, error) {
-	rows, err := s.db.Query(`SELECT id, domain, upstream, request_headers, enabled, created_at, updated_at
+	rows, err := s.db.Query(`SELECT id, domain, upstream, request_headers, group_label, enabled, created_at, updated_at
 		FROM hosts ORDER BY domain`)
 	if err != nil {
 		return nil, fmt.Errorf("list hosts: %w", err)
@@ -31,7 +32,7 @@ func (s *Store) ListHosts() ([]Host, error) {
 	var hosts []Host
 	for rows.Next() {
 		var h Host
-		if err := rows.Scan(&h.ID, &h.Domain, &h.Upstream, &h.RequestHeaders, &h.Enabled, &h.CreatedAt, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Domain, &h.Upstream, &h.RequestHeaders, &h.GroupLabel, &h.Enabled, &h.CreatedAt, &h.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan host: %w", err)
 		}
 		hosts = append(hosts, h)
@@ -41,9 +42,9 @@ func (s *Store) ListHosts() ([]Host, error) {
 
 func (s *Store) GetHost(id int64) (Host, error) {
 	var h Host
-	err := s.db.QueryRow(`SELECT id, domain, upstream, request_headers, enabled, created_at, updated_at
+	err := s.db.QueryRow(`SELECT id, domain, upstream, request_headers, group_label, enabled, created_at, updated_at
 		FROM hosts WHERE id = ?`, id).
-		Scan(&h.ID, &h.Domain, &h.Upstream, &h.RequestHeaders, &h.Enabled, &h.CreatedAt, &h.UpdatedAt)
+		Scan(&h.ID, &h.Domain, &h.Upstream, &h.RequestHeaders, &h.GroupLabel, &h.Enabled, &h.CreatedAt, &h.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, ErrNotFound
 	}
@@ -53,9 +54,9 @@ func (s *Store) GetHost(id int64) (Host, error) {
 	return h, nil
 }
 
-func (s *Store) CreateHost(domain, upstream, requestHeaders string, enabled bool) (Host, error) {
-	res, err := s.db.Exec(`INSERT INTO hosts (domain, upstream, request_headers, enabled) VALUES (?, ?, ?, ?)`,
-		domain, upstream, requestHeaders, enabled)
+func (s *Store) CreateHost(domain, upstream, requestHeaders, groupLabel string, enabled bool) (Host, error) {
+	res, err := s.db.Exec(`INSERT INTO hosts (domain, upstream, request_headers, group_label, enabled) VALUES (?, ?, ?, ?, ?)`,
+		domain, upstream, requestHeaders, groupLabel, enabled)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return Host{}, ErrDuplicateDomain
@@ -69,9 +70,9 @@ func (s *Store) CreateHost(domain, upstream, requestHeaders string, enabled bool
 	return s.GetHost(id)
 }
 
-func (s *Store) UpdateHost(id int64, domain, upstream, requestHeaders string, enabled bool) (Host, error) {
-	res, err := s.db.Exec(`UPDATE hosts SET domain = ?, upstream = ?, request_headers = ?, enabled = ?,
-		updated_at = datetime('now') WHERE id = ?`, domain, upstream, requestHeaders, enabled, id)
+func (s *Store) UpdateHost(id int64, domain, upstream, requestHeaders, groupLabel string, enabled bool) (Host, error) {
+	res, err := s.db.Exec(`UPDATE hosts SET domain = ?, upstream = ?, request_headers = ?, group_label = ?, enabled = ?,
+		updated_at = datetime('now') WHERE id = ?`, domain, upstream, requestHeaders, groupLabel, enabled, id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return Host{}, ErrDuplicateDomain

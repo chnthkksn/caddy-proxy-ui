@@ -12,14 +12,8 @@
 # For scripting/automation, skip the menu by passing a command directly, e.g.:
 #   curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- install
 #
-# Commands:
-#   install            Install Caddy (if missing), caddy-ui, and the systemd service
-#   install-caddy      Install just the Caddy dependency, idempotent
-#   run                Run caddy-ui in the foreground, no systemd service — for a quick trial
-#   update             Update caddy-ui to the latest release, if one is available
-#   reset-password     Reset the dashboard admin password (prompts, hides input)
-#   uninstall [--purge]  Remove caddy-ui; --purge also deletes its SQLite data
-#   status             Show systemd status for caddy and caddy-ui
+# The list of commands lives in usage() below, so that `help` prints the same
+# text whether this file was downloaded or piped straight into bash.
 
 set -euo pipefail
 
@@ -28,6 +22,14 @@ BIN_PATH="/usr/local/bin/caddy-ui"
 SERVICE_PATH="/etc/systemd/system/caddy-ui.service"
 DATA_DIR="/var/lib/caddy-ui"
 DB_PATH="$DATA_DIR/caddy-ui.db"
+LOG_GROUP="caddy-ui-logs"
+LOG_DIR="/var/log/caddy-ui"
+ACCESS_LOG_PATH="$LOG_DIR/access.log"
+CERT_GROUP="caddy-ui-certs"
+# Where apt/dnf's Caddy package stores certificates by default (no
+# XDG_DATA_HOME override in its systemd unit) — matches caddy-ui's own
+# CADDY_STORAGE_PATH default in cmd/caddy-ui/serve.go.
+CADDY_STORAGE_PATH="/var/lib/caddy/.local/share/caddy"
 
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -141,6 +143,89 @@ install_caddy() {
 		echo "up manually, make sure its Admin API is reachable at http://localhost:2019" >&2
 		echo "(Caddy's own default) or caddy-ui won't be able to push config to it." >&2
 	fi
+
+	setup_access_log_sharing
+	setup_cert_storage_sharing
+}
+
+# ensure_acl_tools installs setfacl if it's missing. Needed for
+# setup_cert_storage_sharing's default ACLs — a plain one-time chmod would
+# only cover certificates that exist at install time, not ones Caddy issues
+# later, since default ACLs (unlike chmod) apply automatically to new files
+# a directory's owner creates after the fact.
+ensure_acl_tools() {
+	if command -v setfacl >/dev/null 2>&1; then
+		return
+	fi
+	log "Installing 'acl' (needed for read-only certificate sharing)..."
+	if command -v apt-get >/dev/null 2>&1; then
+		apt-get install -y acl
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y acl
+	fi
+}
+
+# setup_access_log_sharing lets Caddy (running as its own "caddy" system
+# user) write access logs into a directory caddy-ui (running as a systemd
+# DynamicUser) can read, without loosening either process's own permissions.
+# Mechanism: a dedicated shared group, and a setgid directory so files Caddy
+# creates automatically inherit that group regardless of Caddy's own primary
+# group — see contrib/systemd/caddy-ui.service's SupplementaryGroups for the
+# other half.
+setup_access_log_sharing() {
+	groupadd -f "$LOG_GROUP"
+
+	mkdir -p "$LOG_DIR"
+	chgrp "$LOG_GROUP" "$LOG_DIR"
+	chmod 2775 "$LOG_DIR"
+
+	if ! id -u caddy >/dev/null 2>&1; then
+		log "No 'caddy' system user found — skipping access log sharing setup."
+		return
+	fi
+
+	if id -nG caddy | tr ' ' '\n' | grep -qx "$LOG_GROUP"; then
+		return
+	fi
+
+	usermod -aG "$LOG_GROUP" caddy
+	log "Added 'caddy' to the '$LOG_GROUP' group for access log sharing."
+	if systemctl is-active --quiet caddy 2>/dev/null; then
+		log "Restarting Caddy so the new group membership takes effect."
+		systemctl restart caddy
+	fi
+}
+
+# setup_cert_storage_sharing gives caddy-ui read-only access to Caddy's own
+# certificate storage, so the Certificates page can show real expiry dates.
+# Unlike setup_access_log_sharing, Caddy itself needs no changes here — it
+# already owns these files — so this only needs default ACLs (setfacl -d),
+# not a shared group with Caddy as a member. Default ACLs, unlike a one-time
+# chmod, also cover certificates Caddy issues after this script runs.
+setup_cert_storage_sharing() {
+	ensure_acl_tools
+	if ! command -v setfacl >/dev/null 2>&1; then
+		echo "Warning: couldn't install 'acl' — the Certificates page won't be able" >&2
+		echo "to read Caddy's certificate storage. Install the 'acl' package manually" >&2
+		echo "and rerun 'install' to enable it." >&2
+		return
+	fi
+
+	groupadd -f "$CERT_GROUP"
+
+	# Created with the same ownership Caddy's package normally leaves it at
+	# (root:root, 0755) if it doesn't exist yet — a fresh Caddy install
+	# hasn't issued anything, so this directory may not exist until its
+	# first certificate. The ACLs below apply as soon as it does.
+	mkdir -p "$CADDY_STORAGE_PATH"
+
+	# rX: read, and traverse-if-directory — never makes a regular file
+	# executable. -R applies it to what's already there; -d makes it the
+	# default ACL so anything Caddy creates under here later inherits it
+	# automatically, with no re-run of this script required.
+	setfacl -R -m "g:$CERT_GROUP:rX" "$CADDY_STORAGE_PATH"
+	setfacl -R -d -m "g:$CERT_GROUP:rX" "$CADDY_STORAGE_PATH"
+	log "Granted the '$CERT_GROUP' group read-only access to $CADDY_STORAGE_PATH."
 }
 
 # latest_version resolves GitHub's /releases/latest redirect to read off the
@@ -192,7 +277,10 @@ Type=simple
 ExecStart=$BIN_PATH serve
 Environment=CADDY_ADMIN_URL=http://localhost:2019
 Environment=DB_PATH=$DB_PATH
+Environment=ACCESS_LOG_PATH=$ACCESS_LOG_PATH
+Environment=CADDY_STORAGE_PATH=$CADDY_STORAGE_PATH
 DynamicUser=yes
+SupplementaryGroups=$LOG_GROUP $CERT_GROUP
 StateDirectory=caddy-ui
 Restart=on-failure
 RestartSec=5
@@ -312,10 +400,10 @@ cmd_uninstall() {
 	rm -f "$BIN_PATH"
 
 	if [ "$purge" -eq 1 ]; then
-		rm -rf "$DATA_DIR"
-		log "Removed caddy-ui and its data ($DATA_DIR)."
+		rm -rf "$DATA_DIR" "$LOG_DIR"
+		log "Removed caddy-ui and its data ($DATA_DIR, $LOG_DIR)."
 	else
-		log "Removed caddy-ui. Data kept at $DATA_DIR — rerun with --purge to delete it too."
+		log "Removed caddy-ui. Data kept at $DATA_DIR and $LOG_DIR — rerun with --purge to delete it too."
 	fi
 	log "Caddy itself was left installed — remove it separately if you no longer need it."
 }
@@ -328,10 +416,30 @@ cmd_status() {
 	systemctl status caddy-ui --no-pager 2>&1 | head -5 || true
 }
 
+# usage must not read "$0": the documented way to run this is
+# `curl ... | sudo bash -s -- <command>`, where $0 is "bash" and the script
+# itself was consumed from stdin and is no longer readable anywhere.
 usage() {
-	# Prints the leading '#'-comment block (the header above), whatever its
-	# current length, stopping at the first non-comment line.
-	sed -n '2,/^[^#]/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+	cat <<'EOF'
+Caddy Proxy UI — install / manage script.
+
+Usage:
+  sudo bash install.sh [command]
+  curl -fsSL https://raw.githubusercontent.com/chnthkksn/caddy-proxy-ui/main/contrib/install.sh | sudo bash -s -- [command]
+
+With no command, an interactive menu is shown and nothing runs until you pick
+an option. Automated runs must name a command, since the menu waits for input.
+
+Commands:
+  install              Install Caddy (if missing), caddy-ui, and the systemd service
+  install-caddy        Install just the Caddy dependency, idempotent
+  run                  Run caddy-ui in the foreground, no systemd service — for a quick trial
+  update               Update caddy-ui to the latest release, if one is available
+  reset-password       Reset the dashboard admin password (prompts, hides input)
+  uninstall [--purge]  Remove caddy-ui; --purge also deletes its SQLite data
+  status               Show systemd status for caddy and caddy-ui
+  help                 Show this message
+EOF
 }
 
 # MENU_CMD is set by interactive_menu rather than returned via command

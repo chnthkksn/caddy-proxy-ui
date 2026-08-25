@@ -74,3 +74,36 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.clearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+	ConfirmPassword string `json:"confirm_password"`
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.NewPassword != req.ConfirmPassword {
+		writeError(w, http.StatusBadRequest, "new passwords do not match")
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+
+	if err := s.auth.ChangePassword(req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrCurrentPasswordIncorrect) {
+			writeError(w, http.StatusUnauthorized, "current password is incorrect")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to change password")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
