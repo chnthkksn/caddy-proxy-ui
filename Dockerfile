@@ -1,5 +1,5 @@
 # --- build the Svelte SPA ---
-FROM node:22-alpine AS web-build
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web-build
 WORKDIR /web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
@@ -8,14 +8,17 @@ COPY web/ ./
 RUN pnpm run build
 
 # --- build the Go binary (embeds web/dist from the stage above) ---
-FROM golang:1.25-alpine AS go-build
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-build
+ARG TARGETOS TARGETARCH TARGETVARIANT
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web-build /web/dist ./web/dist
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /caddy-ui ./cmd/caddy-ui
+# Cross-compile natively rather than emulating the target (the SPA is
+# platform-independent, and the Node toolchain has no armv7-musl binding).
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /caddy-ui ./cmd/caddy-ui
 
 # --- runtime ---
 FROM alpine:3.20
