@@ -32,6 +32,37 @@ type LogConfig struct {
 type LogWriter struct {
 	Output   string `json:"output"`
 	Filename string `json:"filename"`
+	// Caddy rotates this file on its own; these bound how much disk that is
+	// allowed to take. Field names confirmed against `caddy adapt`.
+	RollSizeMB int `json:"roll_size_mb,omitempty"`
+	RollKeep   int `json:"roll_keep,omitempty"`
+}
+
+// AccessLog describes where Caddy writes its access log and how much disk it
+// may use for it. A small VPS is the target here, so this is bounded by
+// default rather than relying on Caddy's much larger built-in ceiling.
+type AccessLog struct {
+	Path string
+	// MaxMB is the total budget across the live file and its rotations, not
+	// the size of a single file.
+	MaxMB int
+}
+
+// accessLogFiles is how many files the budget is split across: the live one
+// plus its rotations.
+const accessLogFiles = 5
+
+// roll converts a total disk budget into Caddy's per-file size and rotation
+// count. A budget too small to split keeps a single capped file and no
+// history, which is still bounded — the point is never to grow without limit.
+func (a AccessLog) roll() (sizeMB, keep int) {
+	if a.MaxMB < accessLogFiles {
+		if a.MaxMB < 1 {
+			return 1, 0
+		}
+		return a.MaxMB, 0
+	}
+	return a.MaxMB / accessLogFiles, accessLogFiles - 1
 }
 
 type LogEncoder struct {
@@ -137,10 +168,10 @@ const serverName = "main"
 // ever sees what should currently be live. adminListen is repeated on every
 // build (see Admin) so Caddy's admin API stays reachable from the caddy-ui
 // container across config reloads. accessRules is keyed by host ID (see
-// store.ListAccessRulesForHosts) — pass nil/empty if none apply. accessLogPath
-// is where Caddy writes structured access logs for every enabled host; pass
-// "" to omit logging entirely.
-func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store.AccessRule, accessLogPath string) Config {
+// store.ListAccessRulesForHosts) — pass nil/empty if none apply. accessLog
+// says where Caddy writes structured access logs for every enabled host and
+// how much disk they may use; a zero Path omits logging entirely.
+func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store.AccessRule, accessLog AccessLog) Config {
 	server := Server{
 		Listen: []string{":443", ":80"},
 	}
@@ -151,7 +182,7 @@ func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store
 			continue
 		}
 		server.Routes = append(server.Routes, buildRoute(h, accessRules[h.ID]))
-		if accessLogPath != "" {
+		if accessLog.Path != "" {
 			loggerNames[h.Domain] = []string{accessLoggerName}
 		}
 	}
@@ -167,11 +198,17 @@ func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store
 			},
 		},
 	}
-	if accessLogPath != "" {
+	if accessLog.Path != "" {
+		rollSize, rollKeep := accessLog.roll()
 		cfg.Logging = Logging{
 			Logs: map[string]LogConfig{
 				accessLoggerName: {
-					Writer:  LogWriter{Output: "file", Filename: accessLogPath},
+					Writer: LogWriter{
+						Output:     "file",
+						Filename:   accessLog.Path,
+						RollSizeMB: rollSize,
+						RollKeep:   rollKeep,
+					},
 					Encoder: LogEncoder{Format: "json"},
 					Include: []string{"http.log.access"},
 				},

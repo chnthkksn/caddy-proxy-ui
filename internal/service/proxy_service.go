@@ -34,27 +34,27 @@ type ProxyService struct {
 	store           *store.Store
 	caddy           *caddyclient.Client
 	adminListen     string
-	accessLogPath   string
+	accessLog       caddyconfig.AccessLog
 	traffic         *trafficlog.Tailer
 	certStoragePath string
 }
 
-// accessLogPath is where Caddy writes structured access logs for every
-// enabled host (see caddyconfig.Build); the same path is tailed by
-// trafficlog to answer the Logs page and Overview dashboard. Pass "" to
-// disable access logging entirely. certStoragePath is Caddy's own certmagic
-// storage root (see internal/certinfo); pass "" if it isn't reachable from
-// this process.
-func New(s *store.Store, c *caddyclient.Client, adminListen, accessLogPath, certStoragePath string) *ProxyService {
+// accessLog is where Caddy writes structured access logs for every enabled
+// host (see caddyconfig.Build) and how much disk they may use; the same path
+// is tailed by trafficlog to answer the Logs page and Overview dashboard.
+// A zero Path disables access logging entirely. certStoragePath is Caddy's
+// own certmagic storage root (see internal/certinfo); pass "" if it isn't
+// reachable from this process.
+func New(s *store.Store, c *caddyclient.Client, adminListen string, accessLog caddyconfig.AccessLog, certStoragePath string) *ProxyService {
 	var traffic *trafficlog.Tailer
-	if accessLogPath != "" {
-		traffic = trafficlog.New(accessLogPath)
+	if accessLog.Path != "" {
+		traffic = trafficlog.New(accessLog.Path)
 	}
 	return &ProxyService{
 		store:           s,
 		caddy:           c,
 		adminListen:     adminListen,
-		accessLogPath:   accessLogPath,
+		accessLog:       accessLog,
 		traffic:         traffic,
 		certStoragePath: certStoragePath,
 	}
@@ -75,7 +75,7 @@ func (p *ProxyService) sync(ctx context.Context) SyncResult {
 		return SyncResult{Error: err.Error()}
 	}
 
-	cfg := caddyconfig.Build(hosts, p.adminListen, rules, p.accessLogPath)
+	cfg := caddyconfig.Build(hosts, p.adminListen, rules, p.accessLog)
 	if err := p.caddy.Load(ctx, cfg); err != nil {
 		return SyncResult{Error: err.Error()}
 	}
@@ -138,7 +138,7 @@ type Paths struct {
 func (p *ProxyService) Paths() Paths {
 	return Paths{
 		CaddyAdminURL:   p.caddy.BaseURL(),
-		AccessLogPath:   p.accessLogPath,
+		AccessLogPath:   p.accessLog.Path,
 		CertStoragePath: p.certStoragePath,
 	}
 }
@@ -155,7 +155,7 @@ func (p *ProxyService) Certificates() ([]certinfo.Cert, bool) {
 
 // TrafficSnapshot returns the current rolling 24h traffic window, re-scanning
 // whatever is new in the access log since the last call. ok is false when
-// access logging isn't configured (empty accessLogPath) — never a fake zero
+// access logging isn't configured (no access log path) — never a fake zero
 // snapshot in that case.
 func (p *ProxyService) TrafficSnapshot() (trafficlog.Snapshot, bool) {
 	if p.traffic == nil {

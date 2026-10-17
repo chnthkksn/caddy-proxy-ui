@@ -32,6 +32,8 @@ services:
       # it gets its own small, purpose-specific mount rather than sharing
       # caddy-ui's own data directory.
       ACCESS_LOG_PATH: /var/log/caddy-ui/access.log
+      # Total disk the access log may use, across the live file and its rotations.
+      ACCESS_LOG_MAX_MB: "50"
       # The official caddy image sets XDG_DATA_HOME=/data, so certmagic
       # stores certificates under /data/caddy inside the caddy container —
       # this is that same caddy_data volume, mounted read-only, at the
