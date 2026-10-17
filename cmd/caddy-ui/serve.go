@@ -36,6 +36,12 @@ func runServe() {
 	// rotations. Bounded by default: the target is a small VPS, where Caddy's
 	// own multi-gigabyte ceiling is not a sensible answer.
 	accessLogMaxMB := envIntOr("ACCESS_LOG_MAX_MB", 50)
+	// Public ports Caddy listens on. Change HTTPS_PORT when something else
+	// (3x-ui/xray, say) already owns 443; HTTP stays on 80 for ACME HTTP-01.
+	ports := caddyconfig.Ports{
+		HTTP:  envIntOr("HTTP_PORT", caddyconfig.DefaultPorts.HTTP),
+		HTTPS: envIntOr("HTTPS_PORT", caddyconfig.DefaultPorts.HTTPS),
+	}
 	// Native/systemd default (apt/dnf's Caddy package sets no XDG_DATA_HOME,
 	// so certmagic falls back to this path); Docker Compose overrides it to
 	// the read-only-mounted caddy_data volume's path instead.
@@ -63,7 +69,7 @@ func runServe() {
 	caddy := caddyclient.New(caddyAdminURL)
 	proxy := service.New(st, caddy, caddyAdminListen,
 		caddyconfig.AccessLog{Path: accessLogPath, MaxMB: accessLogMaxMB},
-		certStoragePath)
+		ports, certStoragePath)
 	auth := service.NewAuthService(st)
 
 	// Best-effort initial push so a caddy-ui restart re-applies existing

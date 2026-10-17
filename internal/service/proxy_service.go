@@ -35,6 +35,7 @@ type ProxyService struct {
 	caddy           *caddyclient.Client
 	adminListen     string
 	accessLog       caddyconfig.AccessLog
+	ports           caddyconfig.Ports
 	traffic         *trafficlog.Tailer
 	certStoragePath string
 }
@@ -45,7 +46,7 @@ type ProxyService struct {
 // A zero Path disables access logging entirely. certStoragePath is Caddy's
 // own certmagic storage root (see internal/certinfo); pass "" if it isn't
 // reachable from this process.
-func New(s *store.Store, c *caddyclient.Client, adminListen string, accessLog caddyconfig.AccessLog, certStoragePath string) *ProxyService {
+func New(s *store.Store, c *caddyclient.Client, adminListen string, accessLog caddyconfig.AccessLog, ports caddyconfig.Ports, certStoragePath string) *ProxyService {
 	var traffic *trafficlog.Tailer
 	if accessLog.Path != "" {
 		traffic = trafficlog.New(accessLog.Path)
@@ -55,6 +56,7 @@ func New(s *store.Store, c *caddyclient.Client, adminListen string, accessLog ca
 		caddy:           c,
 		adminListen:     adminListen,
 		accessLog:       accessLog,
+		ports:           ports,
 		traffic:         traffic,
 		certStoragePath: certStoragePath,
 	}
@@ -75,7 +77,7 @@ func (p *ProxyService) sync(ctx context.Context) SyncResult {
 		return SyncResult{Error: err.Error()}
 	}
 
-	cfg := caddyconfig.Build(hosts, p.adminListen, rules, p.accessLog)
+	cfg := caddyconfig.Build(hosts, p.adminListen, rules, p.accessLog, p.ports)
 	if err := p.caddy.Load(ctx, cfg); err != nil {
 		return SyncResult{Error: err.Error()}
 	}

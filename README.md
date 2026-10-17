@@ -90,9 +90,16 @@ docker compose up -d
 | `DB_PATH` | `/var/lib/caddy-ui/caddy-ui.db` | `/data/caddy-ui.db` |
 | `LISTEN_ADDR` | `:8080` | `:8080` |
 | `COOKIE_SECURE` | `false` | `false` |
+| `HTTP_PORT` | `80` | `80` |
+| `HTTPS_PORT` | `443` | `443` |
 | `ACCESS_LOG_PATH` | `/var/log/caddy-ui/access.log` | `/var/log/caddy-ui/access.log` |
 | `ACCESS_LOG_MAX_MB` | `50` | `50` |
 | `CADDY_STORAGE_PATH` | `/var/lib/caddy/.local/share/caddy` | `/caddy-data/caddy` |
+
+`HTTPS_PORT` exists for servers where something else (3x-ui/xray, for example) already owns 443:
+set it to e.g. `8443` and caddy-ui moves Caddy's HTTPS listener there, points redirects at it, and
+disables the TLS-ALPN challenge (which needs public 443) so certificates still issue over HTTP-01
+on port 80. Sites are then served at `https://domain:8443`.
 
 The last two are what make the Logs and Certificates pages work, and both involve two
 processes sharing a directory:

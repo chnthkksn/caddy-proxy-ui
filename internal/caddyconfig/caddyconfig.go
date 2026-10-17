@@ -4,6 +4,7 @@ package caddyconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"caddy-proxy-ui/internal/store"
@@ -81,10 +82,62 @@ type Admin struct {
 
 type Apps struct {
 	HTTP HTTPApp `json:"http"`
+	TLS  *TLSApp `json:"tls,omitempty"`
 }
 
 type HTTPApp struct {
-	Servers map[string]Server `json:"servers"`
+	// HTTPPort and HTTPSPort tell Caddy which ports are "the" HTTP and HTTPS
+	// ports, so its automatic HTTP->HTTPS redirects point at the right place.
+	// Zero omits them (Caddy's 80/443 defaults).
+	HTTPPort  int               `json:"http_port,omitempty"`
+	HTTPSPort int               `json:"https_port,omitempty"`
+	Servers   map[string]Server `json:"servers"`
+}
+
+// TLSApp only carries the automation policy we need when HTTPS isn't on 443.
+type TLSApp struct {
+	Automation TLSAutomation `json:"automation"`
+}
+
+type TLSAutomation struct {
+	Policies []TLSPolicy `json:"policies"`
+}
+
+type TLSPolicy struct {
+	Issuers []ACMEIssuer `json:"issuers"`
+}
+
+// ACMEIssuer shape confirmed against `caddy adapt` of
+// `issuer acme { disable_tlsalpn_challenge }`.
+type ACMEIssuer struct {
+	Module     string         `json:"module"`
+	Challenges ACMEChallenges `json:"challenges"`
+}
+
+type ACMEChallenges struct {
+	TLSALPN struct {
+		Disabled bool `json:"disabled"`
+	} `json:"tls-alpn"`
+}
+
+// Ports are the public ports Caddy listens on. Run beside something else that
+// owns 443 (3x-ui/xray, say) and HTTPS moves elsewhere.
+type Ports struct {
+	HTTP  int
+	HTTPS int
+}
+
+// DefaultPorts is plain Caddy.
+var DefaultPorts = Ports{HTTP: 80, HTTPS: 443}
+
+func (p Ports) orDefault() Ports {
+	if p.HTTP < 1 {
+		p.HTTP = DefaultPorts.HTTP
+	}
+	if p.HTTPS < 1 {
+		p.HTTPS = DefaultPorts.HTTPS
+	}
+	return p
 }
 
 type Server struct {
@@ -170,10 +223,12 @@ const serverName = "main"
 // container across config reloads. accessRules is keyed by host ID (see
 // store.ListAccessRulesForHosts) — pass nil/empty if none apply. accessLog
 // says where Caddy writes structured access logs for every enabled host and
-// how much disk they may use; a zero Path omits logging entirely.
-func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store.AccessRule, accessLog AccessLog) Config {
+// how much disk they may use; a zero Path omits logging entirely. ports are
+// the public HTTP/HTTPS listen ports; zero values mean 80/443.
+func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store.AccessRule, accessLog AccessLog, ports Ports) Config {
+	ports = ports.orDefault()
 	server := Server{
-		Listen: []string{":443", ":80"},
+		Listen: []string{fmt.Sprintf(":%d", ports.HTTPS), fmt.Sprintf(":%d", ports.HTTP)},
 	}
 
 	loggerNames := make(map[string][]string)
@@ -197,6 +252,18 @@ func Build(hosts []store.Host, adminListen string, accessRules map[int64][]store
 				Servers: map[string]Server{serverName: server},
 			},
 		},
+	}
+	if ports != DefaultPorts {
+		cfg.Apps.HTTP.HTTPPort = ports.HTTP
+		cfg.Apps.HTTP.HTTPSPort = ports.HTTPS
+	}
+	if ports.HTTPS != DefaultPorts.HTTPS {
+		// The TLS-ALPN challenge is validated on public 443, which isn't
+		// ours here, so it can only fail; HTTP-01 on port 80 does the work.
+		var issuer ACMEIssuer
+		issuer.Module = "acme"
+		issuer.Challenges.TLSALPN.Disabled = true
+		cfg.Apps.TLS = &TLSApp{Automation: TLSAutomation{Policies: []TLSPolicy{{Issuers: []ACMEIssuer{issuer}}}}}
 	}
 	if accessLog.Path != "" {
 		rollSize, rollKeep := accessLog.roll()
