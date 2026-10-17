@@ -25,6 +25,8 @@ DB_PATH="$DATA_DIR/caddy-ui.db"
 LOG_GROUP="caddy-ui-logs"
 LOG_DIR="/var/log/caddy-ui"
 ACCESS_LOG_PATH="$LOG_DIR/access.log"
+# Total disk the access log may use, across the live file and its rotations.
+ACCESS_LOG_MAX_MB="${ACCESS_LOG_MAX_MB:-50}"
 CERT_GROUP="caddy-ui-certs"
 # Where apt/dnf's Caddy package stores certificates by default (no
 # XDG_DATA_HOME override in its systemd unit) — matches caddy-ui's own
@@ -306,6 +308,7 @@ ExecStart=$BIN_PATH serve
 Environment=CADDY_ADMIN_URL=http://localhost:2019
 Environment=DB_PATH=$DB_PATH
 Environment=ACCESS_LOG_PATH=$ACCESS_LOG_PATH
+Environment=ACCESS_LOG_MAX_MB=$ACCESS_LOG_MAX_MB
 Environment=CADDY_STORAGE_PATH=$CADDY_STORAGE_PATH
 DynamicUser=yes
 SupplementaryGroups=$LOG_GROUP $CERT_GROUP

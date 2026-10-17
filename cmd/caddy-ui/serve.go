@@ -12,6 +12,7 @@ import (
 
 	"caddy-proxy-ui/internal/api"
 	"caddy-proxy-ui/internal/caddyclient"
+	"caddy-proxy-ui/internal/caddyconfig"
 	"caddy-proxy-ui/internal/service"
 	"caddy-proxy-ui/internal/store"
 	"caddy-proxy-ui/internal/webui"
@@ -31,6 +32,16 @@ func runServe() {
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	cookieSecure := envOr("COOKIE_SECURE", "false") == "true"
 	accessLogPath := envOr("ACCESS_LOG_PATH", "./data/access.log")
+	// Total disk the access log may occupy, across the live file and its
+	// rotations. Bounded by default: the target is a small VPS, where Caddy's
+	// own multi-gigabyte ceiling is not a sensible answer.
+	accessLogMaxMB := envIntOr("ACCESS_LOG_MAX_MB", 50)
+	// Public ports Caddy listens on. Change HTTPS_PORT when something else
+	// (3x-ui/xray, say) already owns 443; HTTP stays on 80 for ACME HTTP-01.
+	ports := caddyconfig.Ports{
+		HTTP:  envIntOr("HTTP_PORT", caddyconfig.DefaultPorts.HTTP),
+		HTTPS: envIntOr("HTTPS_PORT", caddyconfig.DefaultPorts.HTTPS),
+	}
 	// Native/systemd default (apt/dnf's Caddy package sets no XDG_DATA_HOME,
 	// so certmagic falls back to this path); Docker Compose overrides it to
 	// the read-only-mounted caddy_data volume's path instead.
@@ -56,7 +67,9 @@ func runServe() {
 	}
 
 	caddy := caddyclient.New(caddyAdminURL)
-	proxy := service.New(st, caddy, caddyAdminListen, accessLogPath, certStoragePath)
+	proxy := service.New(st, caddy, caddyAdminListen,
+		caddyconfig.AccessLog{Path: accessLogPath, MaxMB: accessLogMaxMB},
+		ports, certStoragePath)
 	auth := service.NewAuthService(st)
 
 	// Best-effort initial push so a caddy-ui restart re-applies existing
