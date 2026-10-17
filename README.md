@@ -3,6 +3,9 @@
 ![Release](https://img.shields.io/github/v/release/chnthkksn/caddy-proxy-ui?include_prereleases)
 ![Build](https://github.com/chnthkksn/caddy-proxy-ui/actions/workflows/release.yml/badge.svg)
 ![License](https://img.shields.io/github/license/chnthkksn/caddy-proxy-ui)
+![Last Commit](https://img.shields.io/github/last-commit/chnthkksn/caddy-proxy-ui)
+![CodeQL](https://github.com/chnthkksn/caddy-proxy-ui/actions/workflows/codeql.yml/badge.svg)
+![Dependabot](https://img.shields.io/github/dependabot/chnthkksn/caddy-proxy-ui)
 
 **A lightweight, native web UI for managing [Caddy](https://caddyserver.com) reverse
 proxies on small servers.**
@@ -87,15 +90,28 @@ docker compose up -d
 | `DB_PATH` | `/var/lib/caddy-ui/caddy-ui.db` | `/data/caddy-ui.db` |
 | `LISTEN_ADDR` | `:8080` | `:8080` |
 | `COOKIE_SECURE` | `false` | `false` |
+| `HTTP_PORT` | `80` | `80` |
+| `HTTPS_PORT` | `443` | `443` |
 | `ACCESS_LOG_PATH` | `/var/log/caddy-ui/access.log` | `/var/log/caddy-ui/access.log` |
+| `ACCESS_LOG_MAX_MB` | `50` | `50` |
 | `CADDY_STORAGE_PATH` | `/var/lib/caddy/.local/share/caddy` | `/caddy-data/caddy` |
+
+`HTTPS_PORT` exists for servers where something else (3x-ui/xray, for example) already owns 443:
+set it to e.g. `8443` and caddy-ui moves Caddy's HTTPS listener there, points redirects at it, and
+disables the TLS-ALPN challenge (which needs public 443) so certificates still issue over HTTP-01
+on port 80. Sites are then served at `https://domain:8443`.
 
 The last two are what make the Logs and Certificates pages work, and both involve two
 processes sharing a directory:
 
 - **Access log** — caddy-ui tells Caddy to write its access log here, then tails it.
-  `install.sh` creates a `caddy-ui-logs` group and a setgid directory so Caddy can write
-  and caddy-ui can read. Under Docker it's a small dedicated volume.
+  `install.sh` creates a `caddy-ui-logs` group, a setgid directory, and a default ACL so
+  Caddy can write and caddy-ui can read — including the file Caddy reopens after each
+  rotation. Under Docker it's a small dedicated volume.
+  `ACCESS_LOG_MAX_MB` is the **total** disk the log may use, across the live file and its
+  rotations, not the size of one file; Caddy rotates it and deletes the oldest. The
+  default of 50 MB suits a small VPS. Setting it lower is fine — the budget is split
+  across five files, so 10 MB means five 2 MB files.
 - **Certificate storage** — read-only. `install.sh` grants access with a POSIX *default*
   ACL (`setfacl -d`), which is why `acl` is installed on native setups: a plain `chmod`
   would only cover certificates that already exist, not ones Caddy issues later. Under

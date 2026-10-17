@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // version is set at build time via -ldflags "-X main.version=...";
@@ -33,4 +34,20 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envIntOr reads a positive integer setting. A value that isn't one is
+// reported and ignored rather than silently treated as zero, which for a
+// size limit would mean something very different from what was intended.
+func envIntOr(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		fmt.Fprintf(os.Stderr, "caddy-ui: ignoring %s=%q (want a positive whole number), using %d\n", key, v, fallback)
+		return fallback
+	}
+	return n
 }

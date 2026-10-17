@@ -9,6 +9,8 @@ ExecStart=/usr/local/bin/caddy-ui serve
 Environment=CADDY_ADMIN_URL=http://localhost:2019
 Environment=DB_PATH=/var/lib/caddy-ui/caddy-ui.db
 Environment=ACCESS_LOG_PATH=/var/log/caddy-ui/access.log
+# Total disk the access log may use, across the live file and its rotations.
+Environment=ACCESS_LOG_MAX_MB=50
 Environment=CADDY_STORAGE_PATH=/var/lib/caddy/.local/share/caddy
 DynamicUser=yes
 # caddy-ui-logs lets this service read /var/log/caddy-ui/access.log, which
