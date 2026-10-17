@@ -14,6 +14,8 @@ services:
       - caddy_logs:/var/log/caddy-ui
 
   caddy-ui:
+    # Pulls the published image; `docker compose up -d --build` builds from source instead.
+    image: ghcr.io/chnthkksn/caddy-proxy-ui:latest
     build: .
     restart: unless-stopped
     depends_on:

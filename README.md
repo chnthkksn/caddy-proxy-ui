@@ -81,6 +81,9 @@ git clone https://github.com/chnthkksn/caddy-proxy-ui.git && cd caddy-proxy-ui
 docker compose up -d
 ```
 
+The compose file pulls the multi-arch image `ghcr.io/chnthkksn/caddy-proxy-ui` (amd64, arm64, armv7),
+published with every release. Use `docker compose up -d --build` to build from source instead.
+
 ### Configuration
 
 | Variable | Native default | Docker Compose value |
