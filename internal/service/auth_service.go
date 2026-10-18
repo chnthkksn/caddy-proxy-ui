@@ -25,6 +25,7 @@ var ErrTOTPChallengeInvalid = errors.New("sign-in expired — enter your passwor
 var ErrTOTPAlreadyEnabled = errors.New("two-factor authentication is already enabled")
 var ErrTOTPNotEnabled = errors.New("two-factor authentication is not enabled")
 var ErrTOTPSetupNotStarted = errors.New("two-factor setup was not started")
+var ErrTOTPLocked = errors.New("too many wrong authentication codes — try again later")
 
 const sessionTTL = 30 * 24 * time.Hour
 
@@ -34,6 +35,14 @@ const sessionTTL = 30 * 24 * time.Hour
 const (
 	totpChallengeTTL         = 5 * time.Minute
 	totpChallengeMaxAttempts = 5
+)
+
+// The per-challenge cap alone can be sidestepped by whoever has the
+// password — just log in again for a fresh challenge — so wrong codes are
+// also counted for the account as a whole, across every challenge.
+const (
+	totpFailureWindow = 15 * time.Minute
+	totpMaxFailures   = 10
 )
 
 const (
@@ -63,8 +72,9 @@ type AuthService struct {
 
 	// mu guards challenges, and also serializes TOTP verification so two
 	// concurrent requests can't both spend the same code.
-	mu         sync.Mutex
-	challenges map[string]*totpChallenge // keyed by hashToken(challenge)
+	mu           sync.Mutex
+	challenges   map[string]*totpChallenge // keyed by hashToken(challenge)
+	totpFailures []time.Time               // recent wrong codes, oldest first
 }
 
 func NewAuthService(s *store.Store) *AuthService {
@@ -161,6 +171,9 @@ func (a *AuthService) CompleteTOTPLogin(challenge, code string) (token string, e
 	}
 
 	if err := a.verifyTOTPLocked(secret, code); err != nil {
+		if errors.Is(err, ErrTOTPLocked) {
+			return "", err
+		}
 		c.attempts++
 		if c.attempts >= totpChallengeMaxAttempts {
 			delete(a.challenges, key)
@@ -181,7 +194,10 @@ func (a *AuthService) TOTPEnabled() (bool, error) {
 // BeginTOTPSetup generates a fresh secret and parks it as pending — it only
 // takes effect once EnableTOTP sees a valid code from it, so a half-finished
 // setup can never lock anyone out.
-func (a *AuthService) BeginTOTPSetup() (secret, uri string, err error) {
+func (a *AuthService) BeginTOTPSetup(password string) (secret, uri string, err error) {
+	if err := a.checkPassword(password); err != nil {
+		return "", "", err
+	}
 	enabled, err := a.TOTPEnabled()
 	if err != nil {
 		return "", "", err
@@ -204,7 +220,10 @@ func (a *AuthService) BeginTOTPSetup() (secret, uri string, err error) {
 	return secret, totpURI(secret, username), nil
 }
 
-func (a *AuthService) EnableTOTP(code string) error {
+// EnableTOTP confirms the pending secret and signs out every session except
+// keepToken (the one doing the enabling), so anything that got in on the
+// password alone has to come back through the second factor.
+func (a *AuthService) EnableTOTP(code, keepToken string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -233,7 +252,10 @@ func (a *AuthService) EnableTOTP(code string) error {
 	if err := a.store.SetSetting(settingTOTPSecret, secret); err != nil {
 		return err
 	}
-	return a.store.DeleteSetting(settingTOTPPendingSecret)
+	if err := a.store.DeleteSetting(settingTOTPPendingSecret); err != nil {
+		return err
+	}
+	return a.store.DeleteSessionsExcept(hashToken(keepToken))
 }
 
 // DisableTOTP needs both the password and a current code, so a hijacked
@@ -242,15 +264,8 @@ func (a *AuthService) DisableTOTP(password, code string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	hash, exists, err := a.store.GetSetting("admin_password_hash")
-	if err != nil {
+	if err := a.checkPassword(password); err != nil {
 		return err
-	}
-	if !exists {
-		return ErrNoAdminAccount
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
-		return ErrCurrentPasswordIncorrect
 	}
 
 	secret, ok, err := a.store.GetSetting(settingTOTPSecret)
@@ -266,8 +281,21 @@ func (a *AuthService) DisableTOTP(password, code string) error {
 	return a.clearTOTP()
 }
 
-// verifyTOTPLocked checks code and records its step as used. Caller holds a.mu.
+// verifyTOTPLocked checks code and records its step as used, counting wrong
+// codes toward the account-wide lockout. Caller holds a.mu.
 func (a *AuthService) verifyTOTPLocked(secret, code string) error {
+	now := time.Now()
+	recent := a.totpFailures[:0]
+	for _, t := range a.totpFailures {
+		if now.Sub(t) < totpFailureWindow {
+			recent = append(recent, t)
+		}
+	}
+	a.totpFailures = recent
+	if len(a.totpFailures) >= totpMaxFailures {
+		return ErrTOTPLocked
+	}
+
 	var lastStep uint64
 	if v, ok, err := a.store.GetSetting(settingTOTPLastStep); err != nil {
 		return err
@@ -275,11 +303,26 @@ func (a *AuthService) verifyTOTPLocked(secret, code string) error {
 		lastStep, _ = strconv.ParseUint(v, 10, 64)
 	}
 
-	step, ok := totpMatch(secret, code, time.Now(), lastStep)
+	step, ok := totpMatch(secret, code, now, lastStep)
 	if !ok {
+		a.totpFailures = append(a.totpFailures, now)
 		return ErrInvalidTOTPCode
 	}
 	return a.store.SetSetting(settingTOTPLastStep, strconv.FormatUint(step, 10))
+}
+
+func (a *AuthService) checkPassword(password string) error {
+	hash, exists, err := a.store.GetSetting("admin_password_hash")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrNoAdminAccount
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return ErrCurrentPasswordIncorrect
+	}
+	return nil
 }
 
 func (a *AuthService) clearTOTP() error {

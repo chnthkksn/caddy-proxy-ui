@@ -35,13 +35,13 @@ func currentCode(t *testing.T, secret string, offset time.Duration) string {
 
 func enableTOTP(t *testing.T, a *AuthService) string {
 	t.Helper()
-	secret, _, err := a.BeginTOTPSetup()
+	secret, _, err := a.BeginTOTPSetup("password123")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Use the previous step's code so the next "current" code is still
 	// spendable afterwards.
-	if err := a.EnableTOTP(currentCode(t, secret, -totpPeriod*time.Second)); err != nil {
+	if err := a.EnableTOTP(currentCode(t, secret, -totpPeriod*time.Second), ""); err != nil {
 		t.Fatal(err)
 	}
 	return secret
@@ -63,10 +63,13 @@ func TestLoginWithoutTOTPIssuesSession(t *testing.T) {
 
 func TestTOTPSetupRequiresValidCode(t *testing.T) {
 	a := newTestAuth(t)
-	if _, _, err := a.BeginTOTPSetup(); err != nil {
+	if _, _, err := a.BeginTOTPSetup("wrong-password"); !errors.Is(err, ErrCurrentPasswordIncorrect) {
+		t.Fatalf("want ErrCurrentPasswordIncorrect, got %v", err)
+	}
+	if _, _, err := a.BeginTOTPSetup("password123"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.EnableTOTP("000000"); !errors.Is(err, ErrInvalidTOTPCode) {
+	if err := a.EnableTOTP("000000", ""); !errors.Is(err, ErrInvalidTOTPCode) {
 		t.Fatalf("want ErrInvalidTOTPCode, got %v", err)
 	}
 	if on, _ := a.TOTPEnabled(); on {
@@ -147,5 +150,42 @@ func TestDisableTOTPAndResetPassword(t *testing.T) {
 	}
 	if on, _ := a.TOTPEnabled(); on {
 		t.Fatal("reset-password should turn two-factor off")
+	}
+}
+
+// Fresh challenges don't reset the count of wrong codes.
+func TestTOTPAccountLockout(t *testing.T) {
+	a := newTestAuth(t)
+	secret := enableTOTP(t, a)
+
+	for i := 0; i < totpMaxFailures; i++ {
+		res, _ := a.Login("admin", "password123")
+		if _, err := a.CompleteTOTPLogin(res.TOTPChallenge, "000000"); !errors.Is(err, ErrInvalidTOTPCode) {
+			t.Fatalf("attempt %d: want ErrInvalidTOTPCode, got %v", i, err)
+		}
+	}
+	res, _ := a.Login("admin", "password123")
+	if _, err := a.CompleteTOTPLogin(res.TOTPChallenge, currentCode(t, secret, 0)); !errors.Is(err, ErrTOTPLocked) {
+		t.Fatalf("want ErrTOTPLocked even for a correct code, got %v", err)
+	}
+}
+
+func TestEnableTOTPSignsOutOtherSessions(t *testing.T) {
+	a := newTestAuth(t)
+	mine, _ := a.Login("admin", "password123")
+	other, _ := a.Login("admin", "password123")
+
+	secret, _, err := a.BeginTOTPSetup("password123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.EnableTOTP(currentCode(t, secret, 0), mine.Token); err != nil {
+		t.Fatal(err)
+	}
+	if !a.ValidateSession(mine.Token) {
+		t.Error("the enabling session should stay signed in")
+	}
+	if a.ValidateSession(other.Token) {
+		t.Error("other sessions should be signed out")
 	}
 }

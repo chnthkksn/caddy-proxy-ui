@@ -94,6 +94,8 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrInvalidTOTPCode):
 			writeError(w, http.StatusUnauthorized, "invalid authentication code")
+		case errors.Is(err, service.ErrTOTPLocked):
+			writeError(w, http.StatusTooManyRequests, err.Error())
 		case errors.Is(err, service.ErrTOTPChallengeInvalid):
 			// 410 tells the UI to drop back to the password step.
 			writeError(w, http.StatusGone, err.Error())
@@ -153,14 +155,27 @@ type totpSetupResponse struct {
 	URI    string `json:"uri"`
 }
 
+type totpSetupRequest struct {
+	Password string `json:"password"`
+}
+
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
-	secret, uri, err := s.auth.BeginTOTPSetup()
+	var req totpSetupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	secret, uri, err := s.auth.BeginTOTPSetup(req.Password)
 	if err != nil {
-		if errors.Is(err, service.ErrTOTPAlreadyEnabled) {
+		switch {
+		case errors.Is(err, service.ErrCurrentPasswordIncorrect):
+			writeError(w, http.StatusUnauthorized, "password is incorrect")
+		case errors.Is(err, service.ErrTOTPAlreadyEnabled):
 			writeError(w, http.StatusConflict, err.Error())
-			return
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to start two-factor setup")
 		}
-		writeError(w, http.StatusInternalServerError, "failed to start two-factor setup")
 		return
 	}
 	writeJSON(w, http.StatusOK, totpSetupResponse{Secret: secret, URI: uri})
@@ -177,7 +192,9 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.auth.EnableTOTP(req.Code); err != nil {
+	// requireAuth already checked the cookie is there and valid.
+	cookie, _ := r.Cookie(sessionCookieName)
+	if err := s.auth.EnableTOTP(req.Code, cookie.Value); err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidTOTPCode):
 			writeError(w, http.StatusBadRequest, "that code didn't match — check your device's clock and try again")
@@ -209,6 +226,8 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "password is incorrect")
 		case errors.Is(err, service.ErrInvalidTOTPCode):
 			writeError(w, http.StatusUnauthorized, "invalid authentication code")
+		case errors.Is(err, service.ErrTOTPLocked):
+			writeError(w, http.StatusTooManyRequests, err.Error())
 		case errors.Is(err, service.ErrTOTPNotEnabled):
 			writeError(w, http.StatusConflict, err.Error())
 		default:

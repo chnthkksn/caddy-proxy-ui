@@ -60,12 +60,14 @@
     }
   }
 
-  const startTOTPSetup = () =>
-    totpAction(async () => {
-      setup = await api.totpSetup();
-      totpCode = "";
+  const startTOTPSetup = (e: SubmitEvent) => {
+    e.preventDefault();
+    return totpAction(async () => {
+      setup = await api.totpSetup(totpPassword);
+      totpPassword = totpCode = "";
       copied = false;
     });
+  };
 
   function cancelTOTPSetup() {
     setup = null;
@@ -261,17 +263,24 @@
             </div>
           </form>
         {:else}
-          <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
-            Require a 6-digit code from an authenticator app at sign-in, on top of the password.
-          </div>
-          {#if totpError}
-            <div class="notice notice-danger" style="margin:0"><Icon name="warn" size={18} /><span>{totpError}</span></div>
-          {/if}
-          <div>
-            <button class="btn btn-secondary" onclick={startTOTPSetup} disabled={totpBusy || !settings}>
-              {totpBusy ? "Starting…" : "Set up two-factor"}
-            </button>
-          </div>
+          <form onsubmit={startTOTPSetup} style="display:flex; flex-direction:column; gap: var(--space-4)">
+            <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
+              Require a 6-digit code from an authenticator app at sign-in, on top of the password.
+              Turning it on signs out every other session.
+            </div>
+            <label class="field">
+              <span class="field-label">Password</span>
+              <input class="input" type="password" bind:value={totpPassword} autocomplete="current-password" required />
+            </label>
+            {#if totpError}
+              <div class="notice notice-danger" style="margin:0"><Icon name="warn" size={18} /><span>{totpError}</span></div>
+            {/if}
+            <div>
+              <button class="btn btn-secondary" type="submit" disabled={totpBusy || !settings}>
+                {totpBusy ? "Starting…" : "Set up two-factor"}
+              </button>
+            </div>
+          </form>
         {/if}
       </div>
 

@@ -68,7 +68,7 @@ export const api = {
       new_password: newPassword,
       confirm_password: confirmPassword,
     }),
-  totpSetup: () => request<TOTPSetup>("POST", "/totp/setup"),
+  totpSetup: (password: string) => request<TOTPSetup>("POST", "/totp/setup", { password }),
   totpEnable: (code: string) => request<{ ok: boolean }>("POST", "/totp/enable", { code }),
   totpDisable: (password: string, code: string) =>
     request<{ ok: boolean }>("POST", "/totp/disable", { password, code }),
