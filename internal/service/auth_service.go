@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -128,12 +129,18 @@ func (a *AuthService) Login(username, password string) (LoginResult, error) {
 		return LoginResult{}, ErrInvalidCredentials
 	}
 
+	// Held from the "is two-factor on?" check through creating the session,
+	// so a password-only login can't slip a session in just after
+	// EnableTOTP has swept the others away.
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	enabled, err := a.TOTPEnabled()
 	if err != nil {
 		return LoginResult{}, err
 	}
 	if enabled {
-		challenge, err := a.newTOTPChallenge()
+		challenge, err := a.newTOTPChallengeLocked()
 		if err != nil {
 			return LoginResult{}, err
 		}
@@ -306,6 +313,11 @@ func (a *AuthService) verifyTOTPLocked(secret, code string) error {
 	step, ok := totpMatch(secret, code, now, lastStep)
 	if !ok {
 		a.totpFailures = append(a.totpFailures, now)
+		if len(a.totpFailures) == totpMaxFailures {
+			// Only reachable by someone who already has the password, so
+			// it's worth surfacing: the password should be changed.
+			log.Printf("auth: %d wrong two-factor codes in %s — locking code checks; the admin password may be compromised", totpMaxFailures, totpFailureWindow)
+		}
 		return ErrInvalidTOTPCode
 	}
 	return a.store.SetSetting(settingTOTPLastStep, strconv.FormatUint(step, 10))
@@ -334,14 +346,13 @@ func (a *AuthService) clearTOTP() error {
 	return nil
 }
 
-func (a *AuthService) newTOTPChallenge() (string, error) {
+// newTOTPChallengeLocked registers a fresh challenge. Caller holds a.mu.
+func (a *AuthService) newTOTPChallengeLocked() (string, error) {
 	challenge, key, err := newSessionToken()
 	if err != nil {
 		return "", err
 	}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	now := time.Now()
 	for k, c := range a.challenges {
 		if now.After(c.expiresAt) {
