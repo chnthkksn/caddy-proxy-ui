@@ -115,6 +115,7 @@ export interface LoginResponse {
 export interface TOTPSetup {
   secret: string;
   uri: string;
+  qr?: { size: number; path: string };
 }
 
 export interface Overview {

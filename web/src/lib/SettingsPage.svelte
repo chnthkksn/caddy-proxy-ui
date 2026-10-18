@@ -234,9 +234,24 @@
         {:else if setup}
           <form onsubmit={enableTOTP} style="display:flex; flex-direction:column; gap: var(--space-4)">
             <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
-              Add this key to your authenticator app (1Password, Bitwarden, Google Authenticator,
-              Aegis…) as a time-based key, then enter the code it shows to confirm.
+              Scan this with your authenticator app (1Password, Bitwarden, Google Authenticator,
+              Aegis…) or add the key by hand, then enter the code it shows to confirm.
             </div>
+            {#if setup.qr}
+              <!-- Always dark-on-white, whatever the theme: scanners need the contrast. -->
+              <svg
+                viewBox="0 0 {setup.qr.size} {setup.qr.size}"
+                width="200"
+                height="200"
+                shape-rendering="crispEdges"
+                role="img"
+                aria-label="QR code for the two-factor setup link"
+                style="align-self:center; border-radius: var(--radius-sm)"
+              >
+                <rect width={setup.qr.size} height={setup.qr.size} fill="#fff" />
+                <path d={setup.qr.path} fill="#000" />
+              </svg>
+            {/if}
             <div class="field">
               <span class="field-label">Setup key</span>
               <input class="input mono" value={groupedSecret} readonly onfocus={(e) => e.currentTarget.select()} />

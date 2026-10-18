@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"caddy-proxy-ui/internal/qr"
 	"caddy-proxy-ui/internal/service"
 )
 
@@ -151,8 +152,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type totpSetupResponse struct {
-	Secret string `json:"secret"`
-	URI    string `json:"uri"`
+	Secret string  `json:"secret"`
+	URI    string  `json:"uri"`
+	QR     *qrCode `json:"qr,omitempty"`
+}
+
+// qrCode is the otpauth URI as an SVG path: dark modules on a
+// Size×Size viewBox that already includes the quiet zone.
+type qrCode struct {
+	Size int    `json:"size"`
+	Path string `json:"path"`
 }
 
 type totpSetupRequest struct {
@@ -178,7 +187,13 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, totpSetupResponse{Secret: secret, URI: uri})
+	resp := totpSetupResponse{Secret: secret, URI: uri}
+	// Only fails for a URI too long to encode (a very long username); the
+	// key and link still work, so carry on without the code.
+	if code, err := qr.Encode([]byte(uri)); err == nil {
+		resp.QR = &qrCode{Size: code.Size + 8, Path: code.SVGPath()}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type totpEnableRequest struct {
