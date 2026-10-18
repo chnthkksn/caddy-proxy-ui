@@ -26,3 +26,11 @@ func (s *Store) SetSetting(key, value string) error {
 	}
 	return nil
 }
+
+func (s *Store) DeleteSetting(key string) error {
+	_, err := s.db.Exec(`DELETE FROM settings WHERE key = ?`, key)
+	if err != nil {
+		return fmt.Errorf("delete setting %q: %w", key, err)
+	}
+	return nil
+}

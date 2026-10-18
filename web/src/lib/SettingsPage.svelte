@@ -2,7 +2,7 @@
   import { api } from "../api";
   import { errorMessage } from "../errors";
   import { data, theme } from "../store.svelte";
-  import type { InstanceSettings } from "../types";
+  import type { InstanceSettings, TOTPSetup } from "../types";
   import Icon from "./Icon.svelte";
 
   let { onLogout }: { onLogout: () => void } = $props();
@@ -36,6 +36,70 @@
       testing = false;
     }
   }
+
+  // Two-factor: `setup` is non-null while a new secret is waiting to be
+  // confirmed with a first code.
+  let setup = $state<TOTPSetup | null>(null);
+  let totpCode = $state("");
+  let totpPassword = $state("");
+  let totpError = $state("");
+  let totpBusy = $state(false);
+  let copied = $state(false);
+
+  const groupedSecret = $derived(setup?.secret.match(/.{1,4}/g)?.join(" ") ?? "");
+
+  async function totpAction(fn: () => Promise<void>) {
+    totpError = "";
+    totpBusy = true;
+    try {
+      await fn();
+    } catch (err) {
+      totpError = errorMessage(err);
+    } finally {
+      totpBusy = false;
+    }
+  }
+
+  const startTOTPSetup = () =>
+    totpAction(async () => {
+      setup = await api.totpSetup();
+      totpCode = "";
+      copied = false;
+    });
+
+  function cancelTOTPSetup() {
+    setup = null;
+    totpCode = totpError = "";
+  }
+
+  async function copyURI() {
+    if (!setup) return;
+    try {
+      await navigator.clipboard.writeText(setup.uri);
+      copied = true;
+    } catch {
+      // Clipboard API needs a secure context; the link is still selectable.
+    }
+  }
+
+  const enableTOTP = (e: SubmitEvent) => {
+    e.preventDefault();
+    return totpAction(async () => {
+      await api.totpEnable(totpCode);
+      setup = null;
+      totpCode = "";
+      if (settings) settings.totp_enabled = true;
+    });
+  };
+
+  const disableTOTP = (e: SubmitEvent) => {
+    e.preventDefault();
+    return totpAction(async () => {
+      await api.totpDisable(totpPassword, totpCode);
+      totpPassword = totpCode = "";
+      if (settings) settings.totp_enabled = false;
+    });
+  };
 
   async function changePassword(e: SubmitEvent) {
     e.preventDefault();
@@ -130,6 +194,86 @@
           <button class="btn btn-ghost" type="button" onclick={onLogout} style="margin-left:auto">Log out</button>
         </div>
       </form>
+
+      <div class="panel" style="display:flex; flex-direction:column; gap: var(--space-4)">
+        <div style="display:flex; align-items:center; gap: var(--space-2)">
+          <div class="panel-title">Two-factor authentication</div>
+          {#if settings}
+            <span class="tag" class:tag-accent-2={settings.totp_enabled} class:tag-neutral={!settings.totp_enabled} style="margin-left:auto">
+              {settings.totp_enabled ? "On" : "Off"}
+            </span>
+          {/if}
+        </div>
+
+        {#if settings?.totp_enabled}
+          <form onsubmit={disableTOTP} style="display:flex; flex-direction:column; gap: var(--space-4)">
+            <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
+              Sign-in asks for a code from your authenticator app after the password.
+              Turning it off needs both. Lost the device? <span class="mono">caddy-ui reset-password</span>
+              on the server turns it off too.
+            </div>
+            <label class="field">
+              <span class="field-label">Password</span>
+              <input class="input" type="password" bind:value={totpPassword} autocomplete="current-password" required />
+            </label>
+            <label class="field">
+              <span class="field-label">Authentication code</span>
+              <input class="input mono" bind:value={totpCode} inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />
+            </label>
+            {#if totpError}
+              <div class="notice notice-danger" style="margin:0"><Icon name="warn" size={18} /><span>{totpError}</span></div>
+            {/if}
+            <div>
+              <button class="btn btn-secondary" type="submit" disabled={totpBusy}>
+                {totpBusy ? "Turning off…" : "Turn off two-factor"}
+              </button>
+            </div>
+          </form>
+        {:else if setup}
+          <form onsubmit={enableTOTP} style="display:flex; flex-direction:column; gap: var(--space-4)">
+            <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
+              Add this key to your authenticator app (1Password, Bitwarden, Google Authenticator,
+              Aegis…) as a time-based key, then enter the code it shows to confirm.
+            </div>
+            <div class="field">
+              <span class="field-label">Setup key</span>
+              <input class="input mono" value={groupedSecret} readonly onfocus={(e) => e.currentTarget.select()} />
+            </div>
+            <div class="field">
+              <span class="field-label">Or import this link</span>
+              <div style="display:flex; gap: var(--space-2)">
+                <input class="input mono" value={setup.uri} readonly onfocus={(e) => e.currentTarget.select()} style="min-width:0; flex:1" />
+                <button class="btn btn-secondary" type="button" onclick={copyURI}>{copied ? "Copied" : "Copy"}</button>
+              </div>
+            </div>
+            <label class="field">
+              <span class="field-label">Code from the app</span>
+              <input class="input mono" bind:value={totpCode} inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />
+            </label>
+            {#if totpError}
+              <div class="notice notice-danger" style="margin:0"><Icon name="warn" size={18} /><span>{totpError}</span></div>
+            {/if}
+            <div style="display:flex; gap: var(--space-2)">
+              <button class="btn btn-primary" type="submit" disabled={totpBusy}>
+                {totpBusy ? "Confirming…" : "Turn on"}
+              </button>
+              <button class="btn btn-ghost" type="button" onclick={cancelTOTPSetup}>Cancel</button>
+            </div>
+          </form>
+        {:else}
+          <div style="font-size:13px; color: var(--color-neutral-700); line-height:1.6; margin-top:-6px">
+            Require a 6-digit code from an authenticator app at sign-in, on top of the password.
+          </div>
+          {#if totpError}
+            <div class="notice notice-danger" style="margin:0"><Icon name="warn" size={18} /><span>{totpError}</span></div>
+          {/if}
+          <div>
+            <button class="btn btn-secondary" onclick={startTOTPSetup} disabled={totpBusy || !settings}>
+              {totpBusy ? "Starting…" : "Set up two-factor"}
+            </button>
+          </div>
+        {/if}
+      </div>
 
       <div class="panel" style="display:flex; flex-direction:column; gap: var(--space-3)">
         <div class="panel-title">Appearance</div>

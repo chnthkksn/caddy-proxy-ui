@@ -103,6 +103,18 @@ export interface InstanceSettings {
   access_log_path: string;
   cert_storage_path: string;
   version: string;
+  totp_enabled: boolean;
+}
+
+export interface LoginResponse {
+  ok: boolean;
+  totp_required?: boolean;
+  challenge?: string;
+}
+
+export interface TOTPSetup {
+  secret: string;
+  uri: string;
 }
 
 export interface Overview {

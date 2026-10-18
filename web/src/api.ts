@@ -8,13 +8,26 @@ import type {
   HostMutationResult,
   ImportResult,
   InstanceSettings,
+  LoginResponse,
   Overview,
   StatusResponse,
   SyncStatus,
+  TOTPSetup,
   TrafficSnapshot,
 } from "./types";
 
 const BASE = "/api";
+
+// ApiError carries the HTTP status so callers can tell e.g. an expired
+// two-factor challenge (410) from a wrong code (401).
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + path, {
@@ -31,7 +44,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const message = isJson && data && typeof data === "object" && "error" in data
       ? String((data as { error: unknown }).error)
       : `Request failed (${res.status})`;
-    throw new Error(message);
+    throw new ApiError(message, res.status);
   }
   return data as T;
 }
@@ -45,7 +58,9 @@ export const api = {
       confirm_password: confirmPassword,
     }),
   login: (username: string, password: string) =>
-    request<{ ok: boolean }>("POST", "/login", { username, password }),
+    request<LoginResponse>("POST", "/login", { username, password }),
+  loginTOTP: (challenge: string, code: string) =>
+    request<LoginResponse>("POST", "/login/totp", { challenge, code }),
   logout: () => request<{ ok: boolean }>("POST", "/logout"),
   changePassword: (currentPassword: string, newPassword: string, confirmPassword: string) =>
     request<{ ok: boolean }>("POST", "/change-password", {
@@ -53,6 +68,10 @@ export const api = {
       new_password: newPassword,
       confirm_password: confirmPassword,
     }),
+  totpSetup: () => request<TOTPSetup>("POST", "/totp/setup"),
+  totpEnable: (code: string) => request<{ ok: boolean }>("POST", "/totp/enable", { code }),
+  totpDisable: (password: string, code: string) =>
+    request<{ ok: boolean }>("POST", "/totp/disable", { password, code }),
 
   listHosts: () => request<Host[]>("GET", "/hosts"),
   createHost: (host: HostInput) => request<HostMutationResult>("POST", "/hosts", host),

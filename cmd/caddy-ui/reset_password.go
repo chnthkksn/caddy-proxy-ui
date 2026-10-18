@@ -14,7 +14,8 @@ import (
 )
 
 // runResetPassword reads a new password as a single line from stdin and
-// updates the existing admin account, invalidating any active sessions.
+// updates the existing admin account, turning off two-factor authentication
+// and invalidating any active sessions.
 // Deliberately dumb/scriptable — hiding the input from the terminal is left
 // to the caller (e.g. contrib/install.sh uses `read -s`), rather than
 // pulling in a terminal-handling dependency here.
@@ -42,5 +43,5 @@ func runResetPassword() {
 	if err := auth.ResetPassword(password); err != nil {
 		log.Fatalf("reset password: %v", err)
 	}
-	fmt.Println("Password reset. Any existing dashboard sessions were signed out.")
+	fmt.Println("Password reset and two-factor authentication turned off. Any existing dashboard sessions were signed out.")
 }
