@@ -27,9 +27,13 @@ func (s *Server) Routes() *http.ServeMux {
 
 	mux.HandleFunc("POST /api/setup", s.handleSetup)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/login/totp", s.handleLoginTOTP)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.Handle("POST /api/change-password", s.requireAuth(http.HandlerFunc(s.handleChangePassword)))
+	mux.Handle("POST /api/totp/setup", s.requireAuth(http.HandlerFunc(s.handleTOTPSetup)))
+	mux.Handle("POST /api/totp/enable", s.requireAuth(http.HandlerFunc(s.handleTOTPEnable)))
+	mux.Handle("POST /api/totp/disable", s.requireAuth(http.HandlerFunc(s.handleTOTPDisable)))
 
 	mux.Handle("GET /api/hosts", s.requireAuth(http.HandlerFunc(s.handleListHosts)))
 	mux.Handle("POST /api/hosts", s.requireAuth(http.HandlerFunc(s.handleCreateHost)))
