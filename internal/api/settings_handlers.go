@@ -10,14 +10,21 @@ type settingsResponse struct {
 	AccessLogPath   string `json:"access_log_path"`
 	CertStoragePath string `json:"cert_storage_path"`
 	Version         string `json:"version"`
+	TOTPEnabled     bool   `json:"totp_enabled"`
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	paths := s.proxy.Paths()
+	totpEnabled, err := s.auth.TOTPEnabled()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load settings")
+		return
+	}
 	writeJSON(w, http.StatusOK, settingsResponse{
 		CaddyAdminURL:   paths.CaddyAdminURL,
 		AccessLogPath:   paths.AccessLogPath,
 		CertStoragePath: paths.CertStoragePath,
 		Version:         s.version,
+		TOTPEnabled:     totpEnabled,
 	})
 }

@@ -48,7 +48,9 @@ resident memory, so you can check it on your own box rather than trusting this l
 - Logs & traffic: the access log tailed live, with 24h request and error counts per host
 - Caddyfile import (conservative — anything it can't safely translate is reported as
   *skipped*, never silently dropped) and clean Caddyfile export
-- Single-admin login, no default credentials; Caddy connectivity indicator
+- Single-admin login, no default credentials; optional two-factor authentication with any
+  TOTP authenticator app (`reset-password` on the server turns it off if you lose the
+  device); Caddy connectivity indicator
 - Light and dark themes; works down to phone width
 - Native Linux install (systemd) — Docker is optional, not required
 

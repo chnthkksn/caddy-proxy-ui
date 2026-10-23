@@ -61,3 +61,13 @@ func (s *Store) DeleteAllSessions() error {
 	}
 	return nil
 }
+
+// DeleteSessionsExcept signs out every session but one, e.g. after turning
+// on two-factor from that session.
+func (s *Store) DeleteSessionsExcept(tokenHash string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash != ?`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("delete other sessions: %w", err)
+	}
+	return nil
+}
